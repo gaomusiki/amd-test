@@ -7,7 +7,7 @@ SUBMITS_ROOT="submits"
 SCORE_FEEBACK_BRANCH_NAME="score-feedback"
 
 CLASSROOM="nju-llm-course-classroom"
-ASSIGNMENT="assignment-2-modeling-mlp"
+ASSIGNMENT="assignment-3-modeling-attn"
 
 STUDENT_REPO_ROOT="$SUBMITS_ROOT/$ASSIGNMENT-submissions"
 mkdir -p "${STUDENT_REPO_ROOT}"

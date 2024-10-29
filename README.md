@@ -1,16 +1,16 @@
-# assignment-2-modeling-mlp
+# assignment-3-modeling-attn
 For this assignment, we are continuing to design modeling tasks to help you gain a deeper understanding of transformer's component modules. 
 
-Specifically, we will focus on one of the pivotal layers that form the backbone of the transformer structure: the mlp layer.
+Specifically, we will focus on one of the pivotal layers that form the backbone of the transformer structure: the attention layer.
 
 
 ## Tasks (100 points)
 
-### Task 1: Dense MLP with LoRA Adapters (40 points)
+### Task 1: Offline Sliding-Window Attention (40 points)
 
 Please read the description [here](./tasks/task1.md).
 
-### Task 2: Sparse MLP with LoRA Adapters (60 points)
+### Task 2: Online Sliding-Window Attention (60 points)
 
 Please read the description [here](./tasks/task2.md).
 

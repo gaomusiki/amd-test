@@ -5,7 +5,7 @@ SEP="========================================================================"
 SUBMITS_ROOT="submits"
 CLASSROOM="nju-llm-course-classroom"
 
-export ASSIGNMENT="assignment-2-modeling-mlp"
+export ASSIGNMENT="assignment-3-modeling-attn"
 
 export STUDENT_REPO_ROOT="$SUBMITS_ROOT/$ASSIGNMENT-submissions"
 
