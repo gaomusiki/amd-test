@@ -1,6 +1,8 @@
 from typing import Optional, Tuple
 from enum import Enum
 
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -77,7 +79,7 @@ class OfflineSlidingWindowAttn(nn.Module):
         assert head_dim % group_size == 0, f"The head dimension ({head_dim}) must be divisible by the group size ({group_size})"
         assert num_q_head % num_kv_head == 0, f"The number of query heads ({num_q_head}) must be divisible by the number of key/value heads ({num_kv_head})"
         assert softmax_temp > 0., "The softmax temperature must be greater than 0"
-        assert softmax_cap > 0. or softmax_cap is None, "The softmax capping must be greater than 0 if given"
+        assert softmax_cap is None or softmax_cap > 0., "The softmax capping must be greater than 0 if given"
         assert softmax_clip_range[0] < softmax_clip_range[1], "The softmax clip range must be a valid range (l,r), s.t. l < r"
         
         self.head_dim = head_dim
@@ -93,7 +95,7 @@ class OfflineSlidingWindowAttn(nn.Module):
         self.softmax_dropout_rate = softmax_dropout_rate
         self.softmax_dropout_seed = softmax_dropout_seed
         
-        self.softmax_scale = softmax_scale if softmax_scale is not None else 1.0 / torch.sqrt(head_dim)
+        self.softmax_scale = softmax_scale if softmax_scale is not None else 1.0 / math.sqrt(head_dim)
         self.softmax_cap = softmax_cap
         self.softmax_temp = softmax_temp
         self.softmax_clip_range = softmax_clip_range
@@ -164,7 +166,7 @@ class OfflineSlidingWindowAttn(nn.Module):
             device=self.device,
         )
         self.qk_norm_func = lambda q, k: [ # assuming q,k already have shape: (b, s, h, d)
-            norm_layer(x.view(*x.shape[:1], -1)).view(*x.shape[:1], num_head, self.head_dim)
+            norm_layer(x.view(*x.shape[:2], -1)).view(*x.shape[:2], num_head, self.head_dim)
             for x, norm_layer, num_head in zip(
                 (q, k), 
                 (self.q_norm_layer, self.k_norm_layer), 
