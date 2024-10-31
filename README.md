@@ -55,13 +55,40 @@ Please read the description [here](./tasks/task2.md).
     | Task2 - Case5 | 10 |  |
     | Task2 - Case6 | 10 |  |
     | Total         | 100|  |
-* To help you debug:
-    * 1. We will give some test cases as toy examples in the visible `test_toy.py` file, and you had better ensure your code works correctly on your own machine before submitting, with the following command (*Feel free to modify the `test_toy.py` file to your specific debugging needs, since we wouldn't run it to score your code*).
-        ```python
+
+
+## Debug
+
+*To help you debug:*
+
+* 1. Naive debug mode with `test_toy.py`:
+    * ① We will give a few test cases with **explicit answers** as toy examples in the visible `test_toy.py` file.
+    * ② You had better ensure your code works correctly on your own machine before submitting, with the following command.
+        ```sh
         pytest test_toy.py
         ```
-    * 2. We will pre-test on your intermediate submission **as frequently as possible**, and offer only the score feedback (*See [Feedback](#feedback)*) each time to allow you to improve your code for higher scores before the hard ddl.
-* **Note:** The testing methods provided in the `test_toy.py` file are for debugging purposes only, and may differ from the actual tests we use in `test_score.py` to test and score your code. Thus, be careful, particularly when handling edge cases.
+    * ③ Feel free to modify the `test_toy.py` file to your specific debugging needs, since we wouldn't run it to score your code, as well as `test_with_ref.py` below.
+* 2. Deep debug mode with `test_with_ref.py` given specific docker image (**Unix-like Only**):
+    * ① Based on `test_toy.py`, we offer another test file `test_with_ref.py`, in which a **close-sourced reference package** named `ref`, with the same structure as `src`, will be imported (e.g. `from ref import ...`, `from ref.modeling import ...`). Thus you can create your own test cases beyond the toy ones, and compare your answer with it.
+    * ② To get access to this `ref`, we provide a docker image tar file `a{x}_env_v{y}.tar` uploaded to `NJU Box` (*e.g. the initial version image for the assignment1 will be named `a1_env_v0.tar`*), and you can download it into your private repo.
+    * ③ Then follow the commands below step by step.
+        ```sh
+        # step0. assumming that the tar file "a{x}_env_v{y}.tar" is already downloaded into your private repo
+        
+        # step1. run the given script to load the docker image and execute the container
+        bash run_docker.sh # or maybe you need run it with sudo
+
+        # step2. get into the repo path mounted into the container
+        cd a{x}_repo
+
+        # step3. run the test_with_ref.py
+        pytest test_with_ref.py
+        ```
+    * ④ For windows, either you can extract the core docker commands in `run_docker.sh` and run them on your own if you have docker installed, or you can apply some tricks such as [WSL](https://learn.microsoft.com/en-us/windows/wsl/about) or [DinD](https://jpetazzo.github.io/2015/09/03/do-not-use-docker-in-docker-for-ci/) to simulate a unix-like environment.
+* 3. Pre-test mode:
+    * ① We will pre-test your intermediate submission on the private test cases to score your final submission **as frequently as possible**.
+    * ② After each pre-test, we will offer only the score feedback (*See [Feedback](#feedback)*) to allow you to improve your code for higher scores before the hard ddl.
+* **Note:** The testing methods in `test_toy.py` and `test_with_ref.py` are provided for debugging purposes only and may not reflect the actual tests used in `test_score.py` for evaluating and scoring your code. So be particularly mindful of handling different situations and maybe some edge cases.
 
 
 ## Feedback
