@@ -1,6 +1,8 @@
 # self-defined files to ignore
 submits/
 *.ipynb
+**/.DS_Store
+*.tar
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -8,7 +10,7 @@ __pycache__/
 *$py.class
 
 # C extensions
-*.so
+# *.so
 
 # Distribution / packaging
 .Python
