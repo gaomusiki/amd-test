@@ -70,12 +70,12 @@ Please read the description [here](./tasks/task2.md).
     * ③ Feel free to modify the `test_toy.py` file to your specific debugging needs, since we wouldn't run it to score your code, as well as `test_with_ref.py` below.
 * 2. Deep debug mode with `test_with_ref.py` given specific docker image (**Unix-like Only**):
     * ① Based on `test_toy.py`, we offer another test file `test_with_ref.py`, in which a **close-sourced reference package** named `ref`, with the same structure as `src`, will be imported (e.g. `from ref import ...`, `from ref.modeling import ...`). Thus you can create your own test cases beyond the toy ones, and compare your answer with it.
-    * ② To get access to this `ref`, we provide a docker image tar file `a{x}_env_v{y}.tar` uploaded to `NJU Box` (*e.g. the initial version image for the assignment1 will be named `a1_env_v0.tar`*), and you can download it into your private repo.
-    * ③ Then follow the commands below step by step.
+    * ② To get access to this `ref`, we provide docker image tar files named like either `a{x}_env_v{y}.tar` (*from ngc pytorch base image*) or `a{x}_env_light_v{y}.tar` (*from ubuntu base image*) uploaded to `NJU Box` (*e.g. the initial version of the light image for the assignment1 will be named `a1_env_light_v0.tar`*), and you can download either one into your private repo.
+    * ③ Then follow the example commands below step by step.
         ```sh
-        # step0. assumming that the tar file "a{x}_env_v{y}.tar" is already downloaded into your private repo
+        # step0. assumming that the tar file "a{x}_env_light_v{y}.tar" is already downloaded into your private repo
         
-        # step1. run the given script to load the docker image and execute the container
+        # step1. run the given script to load the docker image (default the light one) and execute the container
         bash run_docker.sh # or maybe you need run it with sudo
 
         # step2. get into the repo path mounted into the container

@@ -8,6 +8,12 @@ docker_version=0
 workspace_dir="workspace"
 repo_name="a3_repo"
 
+# from light ubuntu image or ngc pytorch image
+from_light_image=true
+
+if [[ $from_light_image = true ]]; then
+    docker_name="${docker_name}_light"
+fi
 
 # (optional) set nvidia-docker gpu options
 gpu_enable=false
