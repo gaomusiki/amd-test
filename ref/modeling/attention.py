@@ -8,7 +8,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from .norm import GroupRMSNorm
-from ..functional import correct_attn_lse, correct_attn_output
+from ..functional import (
+    safe_softmax,
+    correct_attn_lse, 
+    correct_attn_output
+)
 
 
 class AttnQKVPackFormat(Enum):
@@ -211,6 +215,9 @@ class OfflineSlidingWindowAttn(nn.Module):
         else:
             self.attn_fwd_func = self._non_varlen_attn_fwd_func
     
+        # init softmax function
+        self.softmax_func = lambda x: F.softmax(x, dim=-1, dtype=torch.float32)
+    
     def forward(
         self,
         q: torch.Tensor,
@@ -275,39 +282,41 @@ class OfflineSlidingWindowAttn(nn.Module):
         # compute logits = q @ k.T * softmax_scale, with shape: (b, h, sq, skv)
         attn_logits = q @ k.transpose(-2, -1) * self.softmax_scale
         
-        # compute softmax lse, with shape: (b, h, sq)
-        softmax_lse = torch.logsumexp(attn_logits, dim=-1)
-        
         # adjust logits magnitude
         if self.softmax_cap is not None: # apply softmax capping
             attn_logits = F.tanh(attn_logits / self.softmax_cap) * self.softmax_cap
         else: # apply softmax temperature
             attn_logits /= self.softmax_temp
         
-        # generate and apply attn mask, with shape: (1, 1, sq, skv)
+        # generate attn mask, with shape: (1, 1, sq, skv)
         attn_mask = self._generate_attn_mask(q, k)
+        
+        # apply attn mask to logits
         attn_logits += attn_mask
         
-        # apply softmax to get probs, with shape: (b, h, sq, skv)
-        attn_probs = F.softmax(attn_logits, dim=-1, dtype=torch.float32).to(q.dtype)
+        # compute lse, with shape: (b, h, sq)
+        attn_lse = attn_logits.logsumexp(dim=-1)
+        
+        # apply softmax to attn weights, with shape: (b, h, sq, skv)
+        attn_weights = self.softmax_func(attn_logits).to(q.dtype)
         
         # apply softmax clipping to prevent outlier
-        attn_probs = torch.clip(
-            self.softmax_clip_range_len * attn_probs + self.softmax_clip_range_min,
+        attn_weights = torch.clip(
+            self.softmax_clip_range_len * attn_weights + self.softmax_clip_range_min,
             min=0.0, max=1.0
         )
         
         # apply softmax dropout
         torch.manual_seed(self.softmax_dropout_seed)
-        attn_probs = self.softmax_dropout(attn_probs)
+        attn_weights = self.softmax_dropout(attn_weights)
         
-        # compute o = att_probs @ v, with shape: (b, h, sq, d)
-        o = attn_probs @ v
+        # compute o = att_weights @ v, with shape: (b, h, sq, d)
+        o = attn_weights @ v
         
         # transpose o from "bhsd" to "bshd"
         o = self.o_trans_func(o)
         
-        return o, softmax_lse
+        return o, attn_lse
     
     def _non_varlen_attn_fwd_func(
         self,
@@ -411,11 +420,16 @@ class OfflineSlidingWindowAttn(nn.Module):
             max=skv
         ) if not causal else (qi + 1)
 
+        # compute the bool mask
+        # where 'True' means the position to be masked out
+        bool_mask = (kj < lb) | (kj >= ub)
+        bool_mask = self._update_bool_mask(bool_mask, qi, kj)
+
         # fill the attn mask
         # where '0' means the position to keep,
         # while '-inf' means the position to be masked out
         attn_mask.masked_fill_(
-            (kj < lb) | (kj >= ub),
+            bool_mask,
             float("-inf")
         )
         
@@ -427,7 +441,31 @@ class OfflineSlidingWindowAttn(nn.Module):
         q: torch.Tensor,
         k: torch.Tensor,
     ) -> Tuple[int, int]:
-        return q.shape[1], k.shape[1]
+        """Get seqlen of q, kv to generate full attention mask
+        
+        Args:`
+            q(torch.Tensor): query tensor, with shape: [batch_size, num_head_q, seq_len_q, head_dim]
+            k(torch.Tensor): key tensor, with shape: [batch_size, num_head_kv, seq_len_kv, head_dim]
+        """
+        return q.shape[-2], k.shape[-2]
+
+    def _update_bool_mask(
+        self,
+        bool_mask: torch.Tensor,
+        qi: torch.Tensor,
+        kj: torch.Tensor,
+    ) -> torch.Tensor:
+        """Update the bool mask beyond the sliding window and optional casuality
+        
+        Args:
+            bool_mask(torch.Tensor): attention mask, with shape: [seqlen_q, seqlen_kv]
+            qi(torch.Tensor): q row-index, with shape: [seqlen_q, 1]
+            kj(torch.Tensor): k col-index, with shape: [1, seqlen_kv]
+            
+        Returns:
+            torch.Tensor: updated attention mask, with shape: [seqlen_q, seqlen_kv]
+        """
+        return bool_mask
 
 
 class OnlineSlidingWindowAttn(OfflineSlidingWindowAttn):
@@ -438,21 +476,18 @@ class OnlineSlidingWindowAttn(OfflineSlidingWindowAttn):
     """
     def __init__(
         self,
-        seqlen_q: int,
-        seqlen_kv: int,
         block_size_q: int,
         block_size_kv: int,
+        seqlen_q: int,
+        seqlen_kv: int,
         head_dim: int,
         num_q_head: int,
         num_kv_head: int,
         window_size: Optional[int] = None,
         causal: bool = False,
-        softmax_dropout_rate: float = 0.0,
-        softmax_dropout_seed: int = 42,
         softmax_scale: Optional[float] = None,
         softmax_cap: Optional[float] = None,
         softmax_temp: float = 1.0,
-        softmax_clip_range: Tuple[float, float] = (0., 1.),
         group_size: int = 1,
         eps: float = 1e-5,
         init_range: tuple = (-1.0, 1.0),
@@ -463,21 +498,18 @@ class OnlineSlidingWindowAttn(OfflineSlidingWindowAttn):
         """Initialize Online Sliding-Window Attention module
         
         Args:
-            seqlen_q(int): the sequence length of q
-            seqlen_kv(int): the sequence length of kv
             block_size_q(int): the block size of q
             block_size_kv(int): the block size of kv
+            seqlen_q(int): the sequence length of q
+            seqlen_kv(int): the sequence length of kv
             head_dim(int): head dimension size
             num_q_head(int): number of query heads
             num_kv_head(int): number of key/value heads
             window_size(int, default = None): window size
             causal(bool, default = False): if True, then apply causal masking as a prior to only allow unidirectional self-attention, otherwise bidirectional
-            softmax_dropout_rate(float, default = 0.0): dropout probability for the softmax probs
-            softmax_dropout_seed(int, default = 42): random seed for softmax drooput
             softmax_scale(float, default = None): softmax scale factor, if None, then applying the standard value: 1/√d
             softmax_cap(float, default = None): softmax capping to control the magnitude of the logits, if None, then NO capping is applied
             softmax_temp(float, default = 1.0): softmax temperature to control the sharpness of the distribution, only apply when softmax_cap is None
-            softmax_clip_range(float, default = (0.0, 1.0): the range for softmax clipping to prevent the outliers from growing further
             group_size(int): group size to split hidden size of query / key for GroupRMSNorm, to apply qk norm
             eps(float, default = 1e-5): epsilon for GroupRMSNorm, to apply qk norm
             init_range(tuple, default = (-1.0, 1.0)): the range of the initialization uniform distribution for GroupRMSNorm, to apply qk norm
@@ -489,16 +521,11 @@ class OnlineSlidingWindowAttn(OfflineSlidingWindowAttn):
             head_dim=head_dim,
             num_q_head=num_q_head,
             num_kv_head=num_kv_head,
-            qkv_pack_format=AttnQKVPackFormat.Q_K_V,
-            qkv_layout=AttnQKVLayout.BSHD,
             window_size=window_size,
             causal=causal,
-            softmax_dropout_rate=softmax_dropout_rate,
-            softmax_dropout_seed=softmax_dropout_seed,
             softmax_scale=softmax_scale,
             softmax_cap=softmax_cap,
             softmax_temp=softmax_temp,
-            softmax_clip_range=softmax_clip_range,
             group_size=group_size,
             eps=eps,
             init_range=init_range,
@@ -508,11 +535,13 @@ class OnlineSlidingWindowAttn(OfflineSlidingWindowAttn):
         )
         # raise NotImplementedError("Assignment3 - Task2")
         
-        self.seqlen_q = seqlen_q
-        self.seqlen_kv = seqlen_kv
-        
         self.block_size_q = block_size_q
         self.block_size_kv = block_size_kv
+        
+        self.seqlen_q = seqlen_q
+        self.seqlen_kv = seqlen_kv
+        self.seqlen_q_padded = self._compute_padded_seqlen(seqlen_q, block_size_q)
+        self.seqlen_kv_padded = self._compute_padded_seqlen(seqlen_kv, block_size_kv)
         
         self.block_idx_q, self.block_idx_kv = None, None
         self.block_start_q, self.block_end_q = None, None
@@ -530,16 +559,26 @@ class OnlineSlidingWindowAttn(OfflineSlidingWindowAttn):
     
         self.local_o = None
         self.local_lse = None
+        
+        # pre-generate the global sliding window attention mask, with shape: [1, 1, sq, skv]
+        self.global_attn_mask = super()._generate_attn_mask(
+            torch.empty(1, self.seqlen_q_padded, 1, 1), # fake q
+            torch.empty(1, self.seqlen_kv_padded, 1), # fake k
+        )
+        
+        # re-init softmax function to the safe one
+        # since certain row of attn logits may be all -inf
+        self.softmax_func = lambda x: safe_softmax(x, dim=-1, dtype=torch.float32)
     
     def forward(
         self,
         q: torch.Tensor,
         k: torch.Tensor,
         v: torch.Tensor,
-        global_o: torch.Tensor,
-        global_lse: torch.Tensor,
         block_idx_q: int,
         block_idx_kv: int,
+        global_o: torch.Tensor,
+        global_lse: Optional[torch.Tensor] = None,
     ) -> None:
         """The forward pass of Offline Sliding-Window Attention module
         
@@ -556,19 +595,23 @@ class OnlineSlidingWindowAttn(OfflineSlidingWindowAttn):
         
         self.block_idx_q = block_idx_q
         self.block_idx_kv = block_idx_kv
-        self.block_start_q, self.block_end_q = self.get_block_se_q_func()
-        self.block_start_kv, self.block_end_kv = self.get_block_se_kv_func()
+        self.block_start_q, self.block_end_q, self.block_end_padded_q = self.get_block_se_q_func()
+        self.block_start_kv, self.block_end_kv, self.block_end_padded_kv = self.get_block_se_kv_func()
         
         # apply the forward for this block of q, k, v
-        # to get the local o and lse
+        # to get the local o with shape [b, bq, hq, hd]
+        # and the local lse with shape [b, hq, bq]
         super().forward(q, k, v)
         
         # update global o and lse inplace
         self._update_global_o_lse(
-            global_o=global_o[:, self.block_start_q:self.block_end_q, ...], # [b, bq, hq, hd]
-            global_lse=global_lse[..., self.block_start_q:self.block_end_q], # [b, hq, bq]
-            local_o=self.local_o, # [b, bq, hq, hd]
-            local_lse=self.local_lse, # [b, hq, bq]
+            global_o=global_o[:, self.block_start_q:self.block_end_q, ...], # [b, bq', hq, hd]
+            global_lse=(
+                global_lse[..., self.block_start_q:self.block_end_q]
+                if global_lse is not None else None
+            ), # [b, hq, bq']
+            local_o=self.local_o[:, :(self.block_end_q - self.block_start_q), ...], # [b, bq', hq, hd]
+            local_lse=self.local_lse[..., :(self.block_end_q - self.block_start_q)], # [b, hq, bq']
         )
         
     def _non_varlen_attn_fwd_func(
@@ -601,29 +644,30 @@ class OnlineSlidingWindowAttn(OfflineSlidingWindowAttn):
         block_size: int,
         block_idx: int,
         max_seqlen: int,
-    ) -> Tuple[int, int]:
+    ) -> Tuple[int, int, int]:
         block_start = block_idx * block_size
+        block_end_padded = (block_idx + 1) * block_size
         block_end = min(
-            (block_idx + 1) * block_size,
+            block_end_padded,
             max_seqlen,
         )
         
-        return block_start, block_end
+        return block_start, block_end, block_end_padded
     
     def _update_global_o_lse(
         self,
         global_o: torch.Tensor,
-        global_lse: torch.Tensor,
+        global_lse: Optional[torch.Tensor],
         local_o: torch.Tensor,
         local_lse: torch.Tensor,
     ) -> None:
         """Update the global o and lse inplace with the local ones
 
         Args:
-            global_o (torch.Tensor): the global o to be updated inplace, with shape: [batch_size, block_size_q, num_q_head, head_dim]
-            global_lse (torch.Tensor): the global lse to be updated inplace, with shape: [batch_size, num_q_head, block_size_q]
-            local_o (torch.Tensor): the local o to update global o, with shape: [batch_size, block_size_q, num_q_head, head_dim]
-            local_lse (torch.Tensor): the local lse to update global lse, with shape: [batch_size, num_q_head, block_size_q]
+            global_o (torch.Tensor): the global o to be updated inplace, with shape: [batch_size, block_size_q_, num_q_head, head_dim]
+            global_lse (torch.Tensor, optional): the global lse to be updated inplace, with shape: [batch_size, num_q_head, block_size_q_]
+            local_o (torch.Tensor): the local o to update global o, with shape: [batch_size, block_size_q_, num_q_head, head_dim]
+            local_lse (torch.Tensor): the local lse to update global lse, with shape: [batch_size, num_q_head, block_size_q_]
         """
         # correct global lse
         new_global_lse = correct_attn_lse(
@@ -659,21 +703,59 @@ class OnlineSlidingWindowAttn(OfflineSlidingWindowAttn):
         Returns:
             torch.Tensor: attention mask, with shape: [1, 1, block_size_q, block_size_kv]
         """
-        # get the global sliding window attention mask, with shape: [1, 1, sq, skv]
-        global_attn_mask = super()._generate_attn_mask(q, k)
+        
+        # get the right global attention mask
+        global_attn_mask = self.global_attn_mask.to(dtype=q.dtype, device=q.device)
         
         # extract the local block of the attention mask, with shape: [1, 1, bq, bkv]
         local_attn_mask = global_attn_mask[
             :, :, 
-            self.block_start_q:self.block_end_q, 
-            self.block_start_kv:self.block_end_kv
+            self.block_start_q:self.block_end_padded_q,
+            self.block_start_kv:self.block_end_padded_kv,
         ]
         
         return local_attn_mask
+    
+    def _compute_padded_seqlen(
+        self,
+        seqlen: int,
+        block_size: int,
+    ) -> int:
+        num_blocks = (seqlen + block_size - 1) // block_size
+        return num_blocks * block_size
     
     def _get_seqlen_q_kv(
         self,
         q: torch.Tensor,
         k: torch.Tensor,
     ) -> Tuple[int, int]:
-        return self.seqlen_q, self.seqlen_kv
+        """Get seqlen of q, kv to generate full attention mask
+        
+        Args:`
+            q(torch.Tensor): query tensor, with shape: [batch_size, num_head_q, seq_len_q, head_dim]
+            k(torch.Tensor): key tensor, with shape: [batch_size, num_head_kv, seq_len_kv, head_dim]
+        """
+        return self.seqlen_q_padded, self.seqlen_kv_padded
+    
+    def _update_bool_mask(
+        self,
+        bool_mask: torch.Tensor,
+        qi: torch.Tensor,
+        kj: torch.Tensor,
+    ) -> torch.Tensor:
+        """Update the bool mask beyond the sliding window and optional casuality
+        
+        Args:
+            bool_mask(torch.Tensor): attention mask, with shape: [seqlen_q_padded, seqlen_kv_padded]
+            qi(torch.Tensor): q row-index, with shape: [seqlen_q_padded, 1]
+            kj(torch.Tensor): k col-index, with shape: [1, seqlen_kv_padded]
+            
+        Returns:
+            torch.Tensor: updated attention mask, with shape: [seqlen_q_padded, seqlen_kv_padded]
+        """
+        # compute the padding bool mask
+        # where 'True' means the postion that belongs to certain padding token
+        pad_bool_mask = (qi >= self.seqlen_q) | (kj >= self.seqlen_kv)
+        bool_mask = torch.logical_or(bool_mask, pad_bool_mask)
+        
+        return bool_mask

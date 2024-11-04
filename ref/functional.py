@@ -122,6 +122,38 @@ def apply_rotary_pos_emb(
     return output
 
 
+def safe_softmax(
+    a: torch.Tensor, 
+    dim: int = -1,
+    dtype: torch.dtype = torch.float32,
+) -> torch.Tensor:
+    """Safely applies softmax to the input tensor.
+    where the all -inf rows will be set to all-zero rows.
+    """
+    all_neg_inf = (a == float('-inf')).all(dim=dim, keepdim=True)
+    
+    sm = F.softmax(a, dim=dim, dtype=dtype)
+    
+    sm = torch.where(all_neg_inf, torch.zeros_like(sm), sm)
+
+    return sm
+
+
+def safe_subtract(
+    a: torch.Tensor,
+    b: torch.Tensor,
+) -> torch.Tensor:
+    """Safely subtracts two tensors.
+    where the subtraction results of two -inf will be set to -inf.
+    """
+    eq = (a == b) & (a == float('-inf'))
+    
+    sub = a - b
+    sub = torch.where(eq, torch.fill(sub, float('-inf')), sub)
+    
+    return sub
+
+
 def correct_attn_lse(
     lse1: torch.Tensor,
     lse2: torch.Tensor,
@@ -135,13 +167,15 @@ def correct_attn_lse(
     Returns:
         lse(torch.Tensor): corrected log sum exp tensor, with shape: [batch_size, num_heads, seq_len]
     """
-    min_lse = torch.min(lse1, lse2)
-    max_lse = torch.max(lse1, lse2)
+    min_lse = torch.min(lse1, lse2).to(torch.float32)
+    max_lse = torch.max(lse1, lse2).to(torch.float32)
     
     # formula: lse = log(exp(lse1) + exp(lse2))
     #              = lse1 + log(1 + exp(lse2 - lse1))
     #              = max_lse + log(1 + exp(min_lse - max_lse))
-    return max_lse + (1 + (min_lse - max_lse).exp()).log()
+    lse = max_lse + safe_subtract(min_lse, max_lse).exp().log1p()
+    
+    return lse.to(lse1.dtype)
 
 
 def correct_attn_output(
@@ -166,8 +200,10 @@ def correct_attn_output(
     # formula: lsei_ = exp(lsei - lse)
     # shape: [b, h, s] -> [b, s, h] -> [b, s, h, 1]
     lse1_, lse2_ = [
-        (x - lse).exp().transpose(-1, -2).unsqueeze(-1)
-        for x in [lse1, lse2]
+        safe_subtract(lsei, lse).exp().transpose(-1, -2).unsqueeze(-1).to(torch.float32)
+        for lsei in [lse1, lse2]
     ]
     
-    return lse1_ * o1 + lse2_ * o2
+    o = lse1_ * o1 + lse2_ * o2
+    
+    return o.to(o1.dtype)
