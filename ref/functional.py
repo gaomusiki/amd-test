@@ -120,3 +120,54 @@ def apply_rotary_pos_emb(
     # apply rotary pos emb to get the embedded output with shape: (1, s, 1, hd)
     output = (input * cos) + (rotate_half(input) * sin)
     return output
+
+
+def correct_attn_lse(
+    lse1: torch.Tensor,
+    lse2: torch.Tensor,
+) -> torch.Tensor:
+    """Corrects the log sum exp tensor for online attention.
+    
+    Args:
+        lse1(torch.Tensor): log sum exp tensor, with shape: [batch_size, num_heads, seq_len]
+        lse2(torch.Tensor): log sum exp tensor, with shape: [batch_size, num_heads, seq_len]
+    
+    Returns:
+        lse(torch.Tensor): corrected log sum exp tensor, with shape: [batch_size, num_heads, seq_len]
+    """
+    min_lse = torch.min(lse1, lse2)
+    max_lse = torch.max(lse1, lse2)
+    
+    # formula: lse = log(exp(lse1) + exp(lse2))
+    #              = lse1 + log(1 + exp(lse2 - lse1))
+    #              = max_lse + log(1 + exp(min_lse - max_lse))
+    return max_lse + (1 + (min_lse - max_lse).exp()).log()
+
+
+def correct_attn_output(
+    o1: torch.Tensor,
+    lse1: torch.Tensor,
+    o2: torch.Tensor,
+    lse2: torch.Tensor,
+    lse: torch.Tensor,
+) -> torch.Tensor:
+    """Corrects the output tensor for online attention.
+    
+    Args:
+        o1(torch.Tensor): local output tensor o1, with shape: [batch_size, seq_len, num_heads, head_dim]
+        lse1(torch.Tensor): local lse for o1, with shape: [batch_size, num_heads, seq_len]
+        o2(torch.Tensor): local output tensor o2, with shape: [batch_size, seq_len, num_heads, head_dim]
+        lse2(torch.Tensor): local lse for o2, with shape: [batch_size, num_heads, seq_len]
+        lse(torch.Tensor): global lse, with shape: [batch_size, num_heads, seq_len]
+    
+    Returns:
+        o(torch.Tensor): corrected global output tensor, with shape: [batch_size, seq_len, num_heads, head_dim]
+    """
+    # formula: lsei_ = exp(lsei - lse)
+    # shape: [b, h, s] -> [b, s, h] -> [b, s, h, 1]
+    lse1_, lse2_ = [
+        (x - lse).exp().transpose(-1, -2).unsqueeze(-1)
+        for x in [lse1, lse2]
+    ]
+    
+    return lse1_ * o1 + lse2_ * o2

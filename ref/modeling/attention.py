@@ -8,6 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from .norm import GroupRMSNorm
+from ..functional import correct_attn_lse, correct_attn_output
 
 
 class AttnQKVPackFormat(Enum):
@@ -56,7 +57,7 @@ class OfflineSlidingWindowAttn(nn.Module):
             head_dim(int): head dimension size
             num_q_head(int): number of query heads
             num_kv_head(int): number of key/value heads
-            qkv_pack_format(AttnQKVPackFormat, default = "qkv_packed"): qkv packed format
+            qkv_pack_format(AttnQKVPackFormat, default = "q_k_v_packed"): qkv packed format
             qkv_layout(AttnQKVLayout, default = "bshd"): qkv shape layout
             window_size(int, default = None): window size
             causal(bool, default = False): if True, then apply causal masking as a prior to only allow unidirectional self-attention, otherwise bidirectional
@@ -313,8 +314,7 @@ class OfflineSlidingWindowAttn(nn.Module):
         q: torch.Tensor, 
         k: torch.Tensor, 
         v: torch.Tensor,
-        cu_seqlens_q: torch.Tensor,
-        cu_seqlens_k: torch.Tensor,
+        *args,
     ) -> torch.Tensor:
         """non-varlen attn forward function
         
@@ -322,8 +322,7 @@ class OfflineSlidingWindowAttn(nn.Module):
             q(torch.Tensor): query tensor, with shape: [batch_size, seq_len_q, num_head, head_dim]
             k(torch.Tensor): key tensor, with shape: [batch_size, seq_len_kv, num_head, head_dim]
             v(torch.Tensor): value tensor, with shape: [batch_size, seq_len_kv, num_head, head_dim]
-            cu_seqlens_q(torch.Tensor): cumulative sequence lengths for query tensor, with shape: [batch_size + 1, ]
-            cu_seqlens_k(torch.Tensor): cumulative sequence lengths for key tensor, with shape: [batch_size + 1, ]
+            *args: to absorb the cu_seqlens kwargs which are not used in non-varlen attn
             
         Returns:
             torch.Tensor: output tensor o, with shape: [batch_size, seq_len_q, num_head, head_dim]
@@ -391,8 +390,8 @@ class OfflineSlidingWindowAttn(nn.Module):
         w = self.window_size
         causal = self.causal
         
-        # get seqlen shape
-        sq, skv = q.shape[1], k.shape[1]
+        # get seqlen of q, kv
+        sq, skv = self._get_seqlen_q_kv(q, k)
         
         # init attn mask, with shape: [sq, skv]
         attn_mask = torch.zeros((sq, skv), dtype=q.dtype)
@@ -423,11 +422,258 @@ class OfflineSlidingWindowAttn(nn.Module):
         # return with shape: (1, 1, sq, skv) to broadcast
         return attn_mask.unsqueeze(0).unsqueeze(0).to(q.device)
     
+    def _get_seqlen_q_kv(
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+    ) -> Tuple[int, int]:
+        return q.shape[1], k.shape[1]
 
-class OnlineSlidingWindowAttn(nn.Module):
-    def __init__(self,):
-        super().__init__()
-        raise NotImplementedError("Assignment3 - Task2")
+
+class OnlineSlidingWindowAttn(OfflineSlidingWindowAttn):
+    """Online Sliding-Window Attention module
+    This is a online version of Offline Sliding-Window Attention module \
+        which only apply attention on a block of q, k, v in "bshd" layout and "q_k_v_packed" format \
+            and update the global o with the local block of o using lse
+    """
+    def __init__(
+        self,
+        seqlen_q: int,
+        seqlen_kv: int,
+        block_size_q: int,
+        block_size_kv: int,
+        head_dim: int,
+        num_q_head: int,
+        num_kv_head: int,
+        window_size: Optional[int] = None,
+        causal: bool = False,
+        softmax_dropout_rate: float = 0.0,
+        softmax_dropout_seed: int = 42,
+        softmax_scale: Optional[float] = None,
+        softmax_cap: Optional[float] = None,
+        softmax_temp: float = 1.0,
+        softmax_clip_range: Tuple[float, float] = (0., 1.),
+        group_size: int = 1,
+        eps: float = 1e-5,
+        init_range: tuple = (-1.0, 1.0),
+        init_seed: int = 42,
+        dtype: torch.dtype = torch.float32,
+        device: str = "cpu",
+    ):
+        """Initialize Online Sliding-Window Attention module
+        
+        Args:
+            seqlen_q(int): the sequence length of q
+            seqlen_kv(int): the sequence length of kv
+            block_size_q(int): the block size of q
+            block_size_kv(int): the block size of kv
+            head_dim(int): head dimension size
+            num_q_head(int): number of query heads
+            num_kv_head(int): number of key/value heads
+            window_size(int, default = None): window size
+            causal(bool, default = False): if True, then apply causal masking as a prior to only allow unidirectional self-attention, otherwise bidirectional
+            softmax_dropout_rate(float, default = 0.0): dropout probability for the softmax probs
+            softmax_dropout_seed(int, default = 42): random seed for softmax drooput
+            softmax_scale(float, default = None): softmax scale factor, if None, then applying the standard value: 1/√d
+            softmax_cap(float, default = None): softmax capping to control the magnitude of the logits, if None, then NO capping is applied
+            softmax_temp(float, default = 1.0): softmax temperature to control the sharpness of the distribution, only apply when softmax_cap is None
+            softmax_clip_range(float, default = (0.0, 1.0): the range for softmax clipping to prevent the outliers from growing further
+            group_size(int): group size to split hidden size of query / key for GroupRMSNorm, to apply qk norm
+            eps(float, default = 1e-5): epsilon for GroupRMSNorm, to apply qk norm
+            init_range(tuple, default = (-1.0, 1.0)): the range of the initialization uniform distribution for GroupRMSNorm, to apply qk norm
+            init_seed(int, default = 42): initialization seed for GroupRMSNorm, to apply qk norm
+            dtype(torch.dtype, default = torch.float32): parameter dtype for GroupRMSNorm, to apply qk norm
+            device(str, default = "cpu"): parameter device for GroupRMSNorm, to apply qk norm
+        """
+        super().__init__(
+            head_dim=head_dim,
+            num_q_head=num_q_head,
+            num_kv_head=num_kv_head,
+            qkv_pack_format=AttnQKVPackFormat.Q_K_V,
+            qkv_layout=AttnQKVLayout.BSHD,
+            window_size=window_size,
+            causal=causal,
+            softmax_dropout_rate=softmax_dropout_rate,
+            softmax_dropout_seed=softmax_dropout_seed,
+            softmax_scale=softmax_scale,
+            softmax_cap=softmax_cap,
+            softmax_temp=softmax_temp,
+            softmax_clip_range=softmax_clip_range,
+            group_size=group_size,
+            eps=eps,
+            init_range=init_range,
+            init_seed=init_seed,
+            dtype=dtype,
+            device=device,
+        )
+        # raise NotImplementedError("Assignment3 - Task2")
+        
+        self.seqlen_q = seqlen_q
+        self.seqlen_kv = seqlen_kv
+        
+        self.block_size_q = block_size_q
+        self.block_size_kv = block_size_kv
+        
+        self.block_idx_q, self.block_idx_kv = None, None
+        self.block_start_q, self.block_end_q = None, None
+        self.block_start_kv, self.block_end_kv = None, None
+        self.get_block_se_q_func = lambda: self._get_block_start_end(
+            block_size=self.block_size_q,
+            block_idx=self.block_idx_q,
+            max_seqlen=self.seqlen_q
+        )
+        self.get_block_se_kv_func = lambda: self._get_block_start_end(
+            block_size=self.block_size_kv,
+            block_idx=self.block_idx_kv,
+            max_seqlen=self.seqlen_kv
+        ) 
     
-    def forward(self,):
-        raise NotImplementedError("Assignment3 - Task2")
+        self.local_o = None
+        self.local_lse = None
+    
+    def forward(
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        global_o: torch.Tensor,
+        global_lse: torch.Tensor,
+        block_idx_q: int,
+        block_idx_kv: int,
+    ) -> None:
+        """The forward pass of Offline Sliding-Window Attention module
+        
+        Args:
+            q(torch.Tensor): query tensor, with shape: [batch_size, block_size_q, num_q_head, head_dim]
+            k(torch.Tensor): key tensor, with shape: [batch_size, block_size_kv, num_kv_head, head_dim]
+            v(torch.Tensor): value tensor, with shape: [batch_size, block_size_kv, num_kv_head, head_dim]
+            global_o(torch.Tensor): global output tensor to be updated inplace, with shape: [batch_size, seqlen_q, num_q_head, head_dim]
+            global_lse(torch.Tensor): global lse tensor to be updated inplace, with shape: [batch_size, num_q_head, seqlen_q]
+            block_idx_q(int): the block index of q
+            block_idx_kv(int): the block index of kv
+        """
+        # raise NotImplementedError("Assignment3 - Task2")
+        
+        self.block_idx_q = block_idx_q
+        self.block_idx_kv = block_idx_kv
+        self.block_start_q, self.block_end_q = self.get_block_se_q_func()
+        self.block_start_kv, self.block_end_kv = self.get_block_se_kv_func()
+        
+        # apply the forward for this block of q, k, v
+        # to get the local o and lse
+        super().forward(q, k, v)
+        
+        # update global o and lse inplace
+        self._update_global_o_lse(
+            global_o=global_o[:, self.block_start_q:self.block_end_q, ...], # [b, bq, hq, hd]
+            global_lse=global_lse[..., self.block_start_q:self.block_end_q], # [b, hq, bq]
+            local_o=self.local_o, # [b, bq, hq, hd]
+            local_lse=self.local_lse, # [b, hq, bq]
+        )
+        
+    def _non_varlen_attn_fwd_func(
+        self,
+        q: torch.Tensor, 
+        k: torch.Tensor,
+        v: torch.Tensor,
+        *args,
+    ) -> torch.Tensor:
+        """non-varlen attn forward function
+        
+        Args:
+            q(torch.Tensor): query tensor, with shape: [batch_size, seq_len_q, num_head, head_dim]
+            k(torch.Tensor): key tensor, with shape: [batch_size, seq_len_kv, num_head, head_dim]
+            v(torch.Tensor): value tensor, with shape: [batch_size, seq_len_kv, num_head, head_dim]
+            *args: to absorb the cu_seqlens kwargs which are not used in non-varlen attn
+            
+        Returns:
+            torch.Tensor: output tensor o, with shape: [batch_size, seq_len_q, num_head, head_dim]
+        """
+        o, lse = self._attn_fwd_func(q, k, v)
+        
+        self.local_o = o
+        self.local_lse = lse
+        
+        return o
+    
+    def _get_block_start_end(
+        self,
+        block_size: int,
+        block_idx: int,
+        max_seqlen: int,
+    ) -> Tuple[int, int]:
+        block_start = block_idx * block_size
+        block_end = min(
+            (block_idx + 1) * block_size,
+            max_seqlen,
+        )
+        
+        return block_start, block_end
+    
+    def _update_global_o_lse(
+        self,
+        global_o: torch.Tensor,
+        global_lse: torch.Tensor,
+        local_o: torch.Tensor,
+        local_lse: torch.Tensor,
+    ) -> None:
+        """Update the global o and lse inplace with the local ones
+
+        Args:
+            global_o (torch.Tensor): the global o to be updated inplace, with shape: [batch_size, block_size_q, num_q_head, head_dim]
+            global_lse (torch.Tensor): the global lse to be updated inplace, with shape: [batch_size, num_q_head, block_size_q]
+            local_o (torch.Tensor): the local o to update global o, with shape: [batch_size, block_size_q, num_q_head, head_dim]
+            local_lse (torch.Tensor): the local lse to update global lse, with shape: [batch_size, num_q_head, block_size_q]
+        """
+        # correct global lse
+        new_global_lse = correct_attn_lse(
+            lse1=global_lse,
+            lse2=local_lse,
+        )
+        
+        # correct and update global output
+        global_o.copy_(
+            correct_attn_output(
+                o1=global_o,
+                lse1=global_lse,
+                o2=local_o,
+                lse2=local_lse,
+                lse=new_global_lse,
+            )
+        )
+        
+        # update global lse
+        global_lse.copy_(new_global_lse)
+    
+    def _generate_attn_mask(
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+    ) -> torch.Tensor:
+        """Generate attention mask
+        
+        Args:
+            q(torch.Tensor): query tensor, with shape: [batch_size, block_size_q, num_head, head_dim]
+            k(torch.Tensor): key tensor, with shape: [batch_size, block_size_kv, num_head, head_dim]
+            
+        Returns:
+            torch.Tensor: attention mask, with shape: [1, 1, block_size_q, block_size_kv]
+        """
+        # get the global sliding window attention mask, with shape: [1, 1, sq, skv]
+        global_attn_mask = super()._generate_attn_mask(q, k)
+        
+        # extract the local block of the attention mask, with shape: [1, 1, bq, bkv]
+        local_attn_mask = global_attn_mask[
+            :, :, 
+            self.block_start_q:self.block_end_q, 
+            self.block_start_kv:self.block_end_kv
+        ]
+        
+        return local_attn_mask
+    
+    def _get_seqlen_q_kv(
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+    ) -> Tuple[int, int]:
+        return self.seqlen_q, self.seqlen_kv
