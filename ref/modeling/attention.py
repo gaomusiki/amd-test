@@ -476,10 +476,10 @@ class OnlineSlidingWindowAttn(OfflineSlidingWindowAttn):
     """
     def __init__(
         self,
-        block_size_q: int,
-        block_size_kv: int,
         seqlen_q: int,
         seqlen_kv: int,
+        block_size_q: int,
+        block_size_kv: int,
         head_dim: int,
         num_q_head: int,
         num_kv_head: int,
@@ -498,10 +498,10 @@ class OnlineSlidingWindowAttn(OfflineSlidingWindowAttn):
         """Initialize Online Sliding-Window Attention module
         
         Args:
-            block_size_q(int): the block size of q
-            block_size_kv(int): the block size of kv
             seqlen_q(int): the sequence length of q
             seqlen_kv(int): the sequence length of kv
+            block_size_q(int): the block size of q
+            block_size_kv(int): the block size of kv
             head_dim(int): head dimension size
             num_q_head(int): number of query heads
             num_kv_head(int): number of key/value heads
@@ -535,14 +535,15 @@ class OnlineSlidingWindowAttn(OfflineSlidingWindowAttn):
         )
         # raise NotImplementedError("Assignment3 - Task2")
         
-        self.block_size_q = block_size_q
-        self.block_size_kv = block_size_kv
-        
+        # init seqlens
         self.seqlen_q = seqlen_q
         self.seqlen_kv = seqlen_kv
         self.seqlen_q_padded = self._compute_padded_seqlen(seqlen_q, block_size_q)
         self.seqlen_kv_padded = self._compute_padded_seqlen(seqlen_kv, block_size_kv)
         
+        # init block attrs
+        self.block_size_q = block_size_q
+        self.block_size_kv = block_size_kv
         self.block_idx_q, self.block_idx_kv = None, None
         self.block_start_q, self.block_end_q = None, None
         self.block_start_kv, self.block_end_kv = None, None
@@ -557,6 +558,7 @@ class OnlineSlidingWindowAttn(OfflineSlidingWindowAttn):
             max_seqlen=self.seqlen_kv
         ) 
     
+        # init local o and lse attrs
         self.local_o = None
         self.local_lse = None
         
@@ -575,10 +577,10 @@ class OnlineSlidingWindowAttn(OfflineSlidingWindowAttn):
         q: torch.Tensor,
         k: torch.Tensor,
         v: torch.Tensor,
+        global_o: torch.Tensor,
+        global_lse: torch.Tensor,
         block_idx_q: int,
         block_idx_kv: int,
-        global_o: torch.Tensor,
-        global_lse: Optional[torch.Tensor] = None,
     ) -> None:
         """The forward pass of Offline Sliding-Window Attention module
         
