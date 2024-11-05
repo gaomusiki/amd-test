@@ -98,6 +98,9 @@ score_test_cases = {
             
             "activation_dtype": torch.bfloat16,
             "activation_device": "cpu",
+            
+            "param_dtype": torch.float32,
+            "param_device": "cpu",
         },
         "case2": {
             "score": 30,
@@ -130,6 +133,9 @@ score_test_cases = {
             
             "activation_dtype": torch.float32,
             "activation_device": "cpu",
+            
+            "param_dtype": torch.float32,
+            "param_device": "cpu",
         }
     },
     "task2": {
@@ -161,6 +167,9 @@ score_test_cases = {
             
             "activation_dtype": torch.float32,
             "activation_device": "cpu",
+            
+            "param_dtype": torch.float32,
+            "param_device": "cpu",
         },
         "case2": {
             "score": 20,
@@ -190,6 +199,9 @@ score_test_cases = {
             
             "activation_dtype": torch.float32,
             "activation_device": "cpu",
+            
+            "param_dtype": torch.float32,
+            "param_device": "cpu",
         }
     },
 }
@@ -206,8 +218,8 @@ def construct_offline_attn_args(
     qkv_layout: AttnQKVLayoutRef,
     seqlens_q: Optional[List[int]] = None,
     seqlens_kv: Optional[List[int]] = None,
-    dtype: torch.dtype = PARAM_DTYPE,
-    device: str = PARAM_DEVICE,
+    dtype: torch.dtype = torch.bfloat16,
+    device: str = "cuda",
     seed: int = SEED,
 ) -> Sequence[Optional[torch.Tensor]]:
     torch.manual_seed(seed)
@@ -264,8 +276,8 @@ def construct_online_attn_args(
     bkv: int,
     bqi: int,
     bkvi: int,
-    dtype: torch.dtype = PARAM_DTYPE,
-    device: str = PARAM_DEVICE,
+    dtype: torch.dtype = torch.bfloat16,
+    device: str = "cuda",
     seed: int = SEED,
 ) -> Sequence[torch.Tensor]:
     nbq = (sq + bq - 1) // bq
@@ -316,8 +328,8 @@ def test_task1(case_key, case_config):
     group_size, eps = case_config["group_size"], case_config["eps"]
     init_range, init_seed = case_config["init_range"], case_config.pop("init_seed", SEED)
     atol, rtol = case_config.pop("atol", ATOL), case_config.pop("rtol", RTOL)
-    activation_dtype, param_dtype = case_config["activation_dtype"], case_config.pop("param_dtype", PARAM_DTYPE)
-    activation_device, param_device = case_config["activation_device"], case_config.pop("param_device", PARAM_DEVICE)
+    activation_dtype, param_dtype = case_config["activation_dtype"], case_config["param_dtype"]
+    activation_device, param_device = case_config["activation_device"], case_config["param_device"]
 
     # construct the input tensors
     q, k, v, cu_seqlens_q, cu_seqlens_kv = construct_offline_attn_args(
@@ -405,8 +417,8 @@ def test_task2(case_key, case_config):
     group_size, eps = case_config["group_size"], case_config["eps"]
     init_range, init_seed = case_config["init_range"], case_config.pop("init_seed", SEED)
     atol, rtol = case_config.pop("atol", ATOL), case_config.pop("rtol", RTOL)
-    activation_dtype, param_dtype = case_config["activation_dtype"], case_config.pop("param_dtype", PARAM_DTYPE)
-    activation_device, param_device = case_config["activation_device"], case_config.pop("param_device", PARAM_DEVICE)
+    activation_dtype, param_dtype = case_config["activation_dtype"], case_config["param_dtype"]
+    activation_device, param_device = case_config["activation_device"], case_config["param_device"]
 
     # construct the input tensors
     q, k, v, global_o, global_lse = construct_online_attn_args(
