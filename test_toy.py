@@ -218,7 +218,7 @@ def construct_online_attn_args(
     dtype: torch.dtype = PARAM_DTYPE,
     device: str = PARAM_DEVICE,
     seed: int = SEED,
-) -> Sequence[Optional[torch.Tensor]]:
+) -> Sequence[torch.Tensor]:
     nbq = (sq + bq - 1) // bq
     nbk = (skv + bkv - 1) // bkv
     assert bqi < nbq, f"bqi({bqi}) >= nbq({nbq})"
@@ -463,7 +463,7 @@ def test_task2(case_key, case_config):
         block_idx_kv=bkvi,
     )
     
-    # check if the output tensors is correct
+    # check if the output tensors are correct
     assert_close(global_o, global_o_ref, atol=atol, rtol=rtol)
     assert_close(global_lse, global_lse_ref, atol=atol, rtol=rtol)
     
