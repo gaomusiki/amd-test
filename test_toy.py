@@ -6,6 +6,7 @@ from typing import List, Optional, Sequence
 import pytest
 
 import torch
+import torch.nn.functional as F
 from torch.testing import assert_close
 
 from src.modeling import (
@@ -27,8 +28,8 @@ toy_test_cases = {
     "task1": {
         "case1": {
             "b": 1,
-            "sq": 7,
-            "skv": 5,
+            "sq": 6,
+            "skv": 6,
             "hq": 1,
             "hkv": 1,
             "hd": 4,
@@ -41,6 +42,8 @@ toy_test_cases = {
             
             "window_size": None,
             "causal": True,
+            
+            "softmax_dropout_rate": 0.1,
             "softmax_scale": None,
             "softmax_cap": None,
             "softmax_temp": 0.8,
@@ -49,7 +52,6 @@ toy_test_cases = {
             "group_size": 1,
             "eps": 1e-5,
             "init_range": (-1.1, 1.1),
-            "init_seed": 42,
             
             "activation_dtype": torch.bfloat16,
             "activation_device": "cpu",
@@ -68,8 +70,10 @@ toy_test_cases = {
             "seqlens_q": [1, 2, 4],
             "seqlens_kv": [2, 2, 1],
             
-            "window_size": 2,
+            "window_size": 1,
             "causal": False,
+            
+            "softmax_dropout_rate": 0.0,
             "softmax_scale": None,
             "softmax_cap": 10,
             "softmax_temp": 1.0,
@@ -78,7 +82,6 @@ toy_test_cases = {
             "group_size": 2,
             "eps": 1e-5,
             "init_range": (-1.2, 1.2),
-            "init_seed": 42,
             
             "activation_dtype": torch.float32,
             "activation_device": "cpu",
@@ -86,12 +89,64 @@ toy_test_cases = {
     },
     "task2": {
         "case1": {
+            "b": 1,
+            "sq": 7,
+            "skv": 5,
+            "hq": 1,
+            "hkv": 1,
+            "hd": 4,
+            
+            "bq": 3,
+            "bkv": 2,
+            "bqi": 1,
+            "bkvi": 1,
+            
+            "window_size": 2,
+            "causal": True,
+            
+            "softmax_scale": None,
+            "softmax_cap": 10,
+            "softmax_temp": 1.0,
+            
+            "group_size": 2,
+            "eps": 1e-5,
+            "init_range": (-1.05, 1.05),
+            
+            "activation_dtype": torch.float32,
+            "activation_device": "cpu",
+        },
+        "case2": {
+            "b": 1,
+            "sq": 7,
+            "skv": 5,
+            "hq": 1,
+            "hkv": 1,
+            "hd": 4,
+            
+            "bq": 3,
+            "bkv": 2,
+            "bqi": 2,
+            "bkvi": 0,
+            
+            "window_size": 1,
+            "causal": False,
+            
+            "softmax_scale": None,
+            "softmax_cap": None,
+            "softmax_temp": 0.9,
+            
+            "group_size": 1,
+            "eps": 1e-5,
+            "init_range": (-1.25, 1.25),
+            
+            "activation_dtype": torch.float32,
+            "activation_device": "cpu",
         }
     },
 }
 
 
-def construct_attn_args(
+def construct_offline_attn_args(
     b: int,
     sq: int,
     skv: int,
@@ -141,12 +196,50 @@ def construct_attn_args(
     if qkv_pack_format == AttnQKVPackFormat.QKV:
         assert sq == skv, "QKV pack format requires sq == skv"
         q = torch.concat((q, k, v), dim=-2)
-        k, v = None
+        k, v = None, None
     elif qkv_pack_format == AttnQKVPackFormat.Q_KV:
         k = torch.concat((k, v), dim=-2)
         v = None
     
     return q, k, v, cu_seqlens_q, cu_seqlens_kv
+
+
+def construct_online_attn_args(
+    b: int,
+    sq: int,
+    skv: int,
+    hq: int,
+    hkv: int,
+    hd: int,
+    bq: int,
+    bkv: int,
+    bqi: int,
+    bkvi: int,
+    dtype: torch.dtype = PARAM_DTYPE,
+    device: str = PARAM_DEVICE,
+    seed: int = SEED,
+) -> Sequence[Optional[torch.Tensor]]:
+    nbq = (sq + bq - 1) // bq
+    nbk = (skv + bkv - 1) // bkv
+    assert bqi < nbq, f"bqi({bqi}) >= nbq({nbq})"
+    assert bkvi < nbk, f"bkvi({bkvi}) >= nbk({nbk})"
+    
+    torch.manual_seed(seed)
+    q = torch.randn((b, sq, hq, hd), dtype=dtype, device=device)
+    k = torch.randn((b, skv, hkv, hd), dtype=dtype, device=device)
+    v = torch.randn((b, skv, hkv, hd), dtype=dtype, device=device)
+    global_o = torch.randn_like(q)
+    global_lse = torch.rand((b, hq, sq), dtype=torch.float32, device=device)
+    
+    q = F.pad(q, pad=(0, 0, 0, 0, 0, nbq*bq - sq), mode="constant", value=0)
+    k = F.pad(k, pad=(0, 0, 0, 0, 0, nbk*bkv - skv), mode="constant", value=0)
+    v = F.pad(v, pad=(0, 0, 0, 0, 0, nbk*bkv - skv), mode="constant", value=0)
+    
+    q = q[:, bqi*bq:(bqi+1)*bq, :, :]
+    k = k[:, bkvi*bkv:(bkvi+1)*bkv, :, :]
+    v = v[:, bkvi*bkv:(bkvi+1)*bkv, :, :]
+    
+    return q, k, v, global_o, global_lse
 
 
 @pytest.mark.parametrize(
@@ -159,7 +252,9 @@ def test_task1(case_key, case_config):
     hq, hkv, hd = case_config["hq"], case_config["hkv"], case_config["hd"]
     qkv_pack_format, qkv_layout = case_config["qkv_pack_format"], case_config["qkv_layout"]
     seqlens_q, seqlens_kv = case_config["seqlens_q"], case_config["seqlens_kv"]
-    w, causal = case_config["window_size"], case_config["causal"]
+    window_size, causal = case_config["window_size"], case_config["causal"]
+    softmax_dropout_rate, softmax_dropout_seed = case_config["softmax_dropout_rate"], \
+        case_config.pop("softmax_dropout_seed", SEED)
     softmax_scale, softmax_cap, softmax_temp, softmax_clip_range = case_config["softmax_scale"], \
         case_config["softmax_cap"], case_config["softmax_temp"], case_config["softmax_clip_range"]
     group_size, eps = case_config["group_size"], case_config["eps"]
@@ -171,18 +266,48 @@ def test_task1(case_key, case_config):
     # construct the reference output tensor
     if case_key == "case1":
         output_ref = torch.tensor(
-            [
-                [[-0.6133, -0.7031,  0.4023,  0.8086],
-                [-4.4375,  0.8555, -2.1875,  4.4688]]
+            [   [[[-1.2500,  0.5938, -2.6406, -0.2598]]],
+ 
+ 
+                [[[-1.0312,  0.5898, -2.5781, -0.2217]]],
+    
+    
+                [[[ 1.2031,  0.5742, -1.4062,  0.5938]]],
+    
+    
+                [[[ 1.1328,  0.5273, -1.2812,  0.5547]]],
+    
+    
+                [[[-0.6914, -0.4180, -0.9609,  0.1011]]],
+    
+    
+                [[[-0.5820, -0.5391, -0.6367, -0.0474]]]
             ],
             dtype=activation_dtype,
             device=activation_device,
         )
     elif case_key == "case2":
         output_ref = torch.tensor(
-            [
-                [[-0.6133, -0.7031,  0.4023,  0.8086],
-                [-4.4375,  0.8555, -2.1875,  4.4688]]
+            [   [[-0.2436,  0.6024, -0.9082,  0.3598],
+                [ 0.3253,  0.7095, -1.0463, -0.0298]],
+        
+                [[-0.0356,  1.5083,  0.4614,  0.6035],
+                [ 0.8084,  0.4402, -1.1642,  0.8343]],
+        
+                [[ 1.0361,  0.1520, -1.6028,  0.8966],
+                [ 0.7126,  0.5614, -0.9797,  0.8081]],
+        
+                [[ 0.0000,  0.0000,  0.0000,  0.0000],
+                [ 0.0000,  0.0000,  0.0000,  0.0000]],
+        
+                [[ 0.0000,  0.0000,  0.0000,  0.0000],
+                [ 0.0000,  0.0000,  0.0000,  0.0000]],
+        
+                [[-0.3753,  1.0331, -0.6867,  0.6368],
+                [-0.3753,  1.0331, -0.6867,  0.6368]],
+        
+                [[-0.3753,  1.0331, -0.6867,  0.6368],
+                [-0.3753,  1.0331, -0.6867,  0.6368]]
             ],
             dtype=activation_dtype,
             device=activation_device,
@@ -191,7 +316,7 @@ def test_task1(case_key, case_config):
         raise ValueError(f"Unknown key for toy test cases: {case_key}")
 
     # construct the input tensors
-    q, k, v, cu_seqlens_q, cu_seqlens_kv = construct_attn_args(
+    q, k, v, cu_seqlens_q, cu_seqlens_kv = construct_offline_attn_args(
         b, sq, skv, hq, hkv, hd, 
         qkv_pack_format, qkv_layout, seqlens_q, seqlens_kv, 
         dtype=activation_dtype, device=activation_device, seed=SEED,
@@ -204,10 +329,10 @@ def test_task1(case_key, case_config):
         num_kv_head=hkv,
         qkv_pack_format=qkv_pack_format,
         qkv_layout=qkv_layout,
-        window_size=w,
+        window_size=window_size,
         causal=causal,
-        softmax_dropout_rate=0.0,
-        softmax_dropout_seed=42,
+        softmax_dropout_rate=softmax_dropout_rate,
+        softmax_dropout_seed=softmax_dropout_seed,
         softmax_scale=softmax_scale,
         softmax_cap=softmax_cap,
         softmax_temp=softmax_temp,
@@ -231,74 +356,117 @@ def test_task1(case_key, case_config):
     assert_close(output, output_ref, atol=atol, rtol=rtol)
     
 
-# @pytest.mark.parametrize(
-#     "case_key, case_config",
-#     toy_test_cases["task2"].items(),
-# )
-# def test_task2(case_key, case_config):
-#     # set hyper parameters
-#     b, s, h, ffh = case_config["b"], case_config["s"], case_config["h"], case_config["ffh"]
-#     activation_type = case_config["activation_type"]
-#     ne, k, rank, world_size = case_config["ne"], case_config["k"], case_config["rank"], case_config["world_size"]
-#     init_mean, init_std = case_config["init_mean"], case_config["init_std"]
-#     r, alpha, dropout = case_config["r"], case_config.pop("alpha", None), case_config.pop("dropout", 0.0)
-#     init_base_seed, lora_init_base_seed, lora_dropout_seed = case_config.pop("init_base_seed", SEED), \
-#         case_config.pop("lora_init_base_seed", SEED), \
-#         case_config.pop("lora_dropout_seed", SEED)
-#     atol, rtol = case_config.pop("atol", ATOL), case_config.pop("rtol", RTOL)
-#     activation_dtype, param_dtype = case_config["activation_dtype"], case_config.pop("param_dtype", PARAM_DTYPE)
-#     activation_device, param_device = case_config["activation_device"], case_config.pop("param_device", PARAM_DEVICE)
+@pytest.mark.parametrize(
+    "case_key, case_config",
+    toy_test_cases["task2"].items(),
+)
+def test_task2(case_key, case_config):
+    # set hyper parameters
+    b, sq, skv = case_config["b"], case_config["sq"], case_config["skv"], 
+    hq, hkv, hd = case_config["hq"], case_config["hkv"], case_config["hd"]
+    bq, bkv, bqi, bkvi = case_config["bq"], case_config["bkv"], case_config["bqi"], case_config["bkvi"]
+    window_size, causal = case_config["window_size"], case_config["causal"]
+    softmax_scale, softmax_cap, softmax_temp = case_config["softmax_scale"], \
+        case_config["softmax_cap"], case_config["softmax_temp"]
+    group_size, eps = case_config["group_size"], case_config["eps"]
+    init_range, init_seed = case_config["init_range"], case_config.pop("init_seed", SEED)
+    atol, rtol = case_config.pop("atol", ATOL), case_config.pop("rtol", RTOL)
+    activation_dtype, param_dtype = case_config["activation_dtype"], case_config.pop("param_dtype", PARAM_DTYPE)
+    activation_device, param_device = case_config["activation_device"], case_config.pop("param_device", PARAM_DEVICE)
     
-#     # construct the reference output tensor
-#     if case_key == "case1":
-#         output_ref = torch.tensor(
-#             [
-#                 [[ 3.7969, -3.1406, -4.7188,  0.0608],
-#                 [ 0.4453, -0.9219, -0.1196, -1.0625],
-#                 [ 2.6406, -1.2656, -1.3594,  0.9258]],
-        
-#                 [[ 0.7617,  0.1196, -0.6523,  1.1719],
-#                 [ 0.6562, -1.2578, -0.3965, -1.3125],
-#                 [ 6.7500, -3.7969, -6.7188,  2.6406]]
-#             ],
-#             dtype=activation_dtype,
-#             device=activation_device,
-#         )
-#     else:
-#         raise ValueError(f"Unknown key for toy test cases: {case_key}")
+    # construct the reference output tensor
+    if case_key == "case1":
+        global_o_ref = torch.tensor(
+            [   [[[ 0.7262,  0.0912, -0.3891,  0.5279]],
 
-#     # construct the input tensor
-#     torch.manual_seed(init_base_seed + 1)
-#     input = torch.randn(b, s, h, dtype=dtype, device=device)
-    
-#     # instantiate the module
-#     sparse_mlp = SparseMLPWithLoRA(
-#         hidden_size=h,
-#         ffh_size=ffh,
-#         activation_type=activation_type,
-#         num_experts=ne,
-#         moe_topk=k,
-#         rank=rank,
-#         world_size=world_size,
-#         init_mean=init_mean,
-#         init_std=init_std,
-#         init_base_seed=init_base_seed,
-#         lora_rank=r,
-#         lora_alpha=alpha,
-#         lora_dropout_rate=dropout,
-#         lora_dropout_seed=lora_dropout_seed,
-#         lora_init_base_seed=lora_init_base_seed,
-#         dtype=param_dtype,
-#         device=param_device,
-#     )
-    
-#     # apply the forward pass
-#     output = sparse_mlp(input)
-    
-#     # check if the output tensor is correct
-#     assert_close(output, output_ref, atol=atol, rtol=rtol)
+                [[ 1.0311, -0.7048,  1.0131, -0.3308]],
 
+                [[ 1.0950,  0.3399,  0.7200,  0.4114]],
 
+                [[-0.9727,  0.9585,  1.6192,  1.4506]],
+
+                [[-0.1416,  0.1298, -0.3337, -0.0960]],
+
+                [[ 0.1034,  1.0100, -0.1437,  0.4305]],
+
+                [[-2.4801, -0.4175, -1.1955,  0.8123]]]
+            ],
+            dtype=activation_dtype,
+            device=activation_device,
+        )
+        global_lse_ref = torch.tensor(
+            [[[0.9545, 0.6099, 0.5643, 0.0594, 1.2782, 1.3653, 0.2709]]],
+            dtype=torch.float32,
+            device=activation_device,
+        )
+    elif case_key == "case2":
+        global_o_ref = torch.tensor(
+            [   [[[ 0.7262,  0.0912, -0.3891,  0.5279]],
+
+                [[ 1.0311, -0.7048,  1.0131, -0.3308]],
+
+                [[ 1.0950,  0.3399,  0.7200,  0.4114]],
+
+                [[-0.9727,  0.9585,  1.6192,  1.4506]],
+
+                [[ 0.2695, -0.2104, -0.7328,  0.1043]],
+
+                [[ 0.3488,  0.9676, -0.4657,  1.6048]],
+
+                [[-2.4801, -0.4175, -1.1955,  0.8123]]]
+            ],
+            dtype=activation_dtype,
+            device=activation_device,
+        )
+        global_lse_ref = torch.tensor(
+            [[[0.9545, 0.6099, 0.5643, 0.0594, 0.7099, 0.4250, 0.2709]]],
+            dtype=torch.float32,
+            device=activation_device,
+        )
+    else:
+        raise ValueError(f"Unknown key for toy test cases: {case_key}")
+
+    # construct the input tensors
+    q, k, v, global_o, global_lse = construct_online_attn_args(
+        b, sq, skv, hq, hkv, hd, bq, bkv, bqi, bkvi,
+        dtype=activation_dtype, device=activation_device, seed=SEED,
+    )
+    
+    # instantiate the module
+    on_swa = OnlineSlidingWindowAttn(
+        seqlen_q=sq,
+        seqlen_kv=skv,
+        block_size_q=bq,
+        block_size_kv=bkv,
+        head_dim=hd,
+        num_q_head=hq,
+        num_kv_head=hkv,
+        window_size=window_size,
+        causal=causal,
+        softmax_scale=softmax_scale,
+        softmax_cap=softmax_cap,
+        softmax_temp=softmax_temp,
+        group_size=group_size,
+        eps=eps,
+        init_range=init_range,
+        init_seed=init_seed,
+        dtype=param_dtype,
+        device=param_device,
+    )
+    
+    # apply the forward pass
+    on_swa(
+        q, k, v,
+        global_o=global_o,
+        global_lse=global_lse,
+        block_idx_q=bqi, 
+        block_idx_kv=bkvi,
+    )
+    
+    # check if the output tensors is correct
+    assert_close(global_o, global_o_ref, atol=atol, rtol=rtol)
+    assert_close(global_lse, global_lse_ref, atol=atol, rtol=rtol)
+    
 
 if __name__ == "__main__":
     pytest.main()
