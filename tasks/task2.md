@@ -1,4 +1,4 @@
-### Task 2: Online Sliding-Window Attention (30 points)
+### Task 2: Online Sliding-Window Attention (40 points)
 
 #### TODO
 

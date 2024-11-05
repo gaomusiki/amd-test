@@ -1,4 +1,4 @@
-### Task 1: Offline Sliding-Window Attention (70 points)
+### Task 1: Offline Sliding-Window Attention (60 points)
 
 #### TODO
 

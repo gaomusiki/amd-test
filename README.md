@@ -6,11 +6,11 @@ Specifically, we will focus on one of the pivotal layers that form the backbone 
 
 ## Tasks (100 points)
 
-### Task 1: Offline Sliding-Window Attention (40 points)
+### Task 1: Offline Sliding-Window Attention (60 points)
 
 Please read the description [here](./tasks/task1.md).
 
-### Task 2: Online Sliding-Window Attention (60 points)
+### Task 2: Online Sliding-Window Attention (40 points)
 
 Please read the description [here](./tasks/task2.md).
 
