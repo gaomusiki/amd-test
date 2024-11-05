@@ -257,7 +257,7 @@ class OfflineSlidingWindowAttn(nn.Module):
         # reshape o
         o = self.o_reshape_func(o)
         
-        return o
+        return o.to(dtype=q.dtype, device=q.device)
     
     def _attn_fwd_func(
         self, 
