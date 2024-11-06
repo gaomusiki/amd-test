@@ -623,6 +623,8 @@ def test_task1(case_key, case_config):
     
     # check if the output tensor is correct
     assert_close(output, output_ref, atol=atol, rtol=rtol)
+    # check if the meta attribute of outout tensor is correct
+    check_if_io_meta_is_match(output, q)
     
 
 @pytest.mark.parametrize(
