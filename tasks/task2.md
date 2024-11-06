@@ -7,9 +7,9 @@ You are required to implement a pytorch module named `OnlineSlidingWindowAttn` i
 
 #### Explanation
 
-* Building upon the `OfflineSlidingWindowAttn` module described in [task1](./task1.md), we continue to implement the `OnlineSlidingWindowAttn` module, which is the online version of the former one, only applying attention on a block of $Q_{bq_i},K_{bkv_j},V_{bkv_j}$ in `AttnQKVLayout.BSHD` layout and `AttnQKVPackFormat.Q_K_V` packing format, and aggregate the local output $O^{(bkv_j)}_{bq_i}$ of this block to the global output $O$, with the help of `log-sum-exp`-style softmax calibration coefficient $lse$.
+* Building upon the `OfflineSlidingWindowAttn` module described in [task1](./task1.md), we continue to implement the `OnlineSlidingWindowAttn` module, which is the online version of the former one, only applying attention on a block of $Q_{bq_i},K_{bkv_j},V_{bkv_j}$ in `AttnQKVLayout.BSHD` layout and `AttnQKVPackFormat.Q_K_V` packing format, and aggregate the local output $O_{bq_i}^{(bkv_j)}$ of this block to the global output $O$, with the help of `log-sum-exp`-style softmax calibration coefficient $lse$.
 * To be more specific, although both the computation cost and the memory footprint of the `attention` operation generally follow the quadratic complexity, we can reduce the memory complexity to almost linear by transforming the `offline softmax` to `online softmax` (*See the Online Softmax Paper in [References](#references)*). The basic idea is to split the `sq`-dim and `skv`-dim of $Q$ and $K,V$ equally to `bq`-dim and `bkv`-dim respectively as blocks, and each time only apply attention on a single block of $Q_{bq_i},K_{bkv_j},V_{bkv_j}$, where the indices $bq_i \in [0, \frac{sq}{bq}]$, $bkv_j \in [0, \frac{skv}{bkv}]$. 
-* The local attention output of this block is denoted as $O^{(bkv_j)}_{bq_i}$, with the shape `[b, bq, hq, hd]`. Give the global output buffer $O$ with the shape `[b, sq, hq, hd]`, how can we aggregate $O^{(bkv_j)}_{bq_i}$ to $O$ accurately since the local/global softmax weights are not normalized from the same factors?
+* The local attention output of this block is denoted as $O_{bq_i}^{(bkv_j)}$, with the shape `[b, bq, hq, hd]`. Give the global output buffer $O$ with the shape `[b, sq, hq, hd]`, how can we aggregate $O_{bq_i}^{(bkv_j)}$ to $O$ accurately since the local/global softmax weights are not normalized from the same factors?
 * As the stable softmax factorization equation shown below, if we split a row vector $X \in \mathbb{R}^{n}$ into two parts $X_1 \in \mathbb{R}^{n_1}$ and $X_2 \in \mathbb{R}^{n_2}$, where $n_1 + n_2 = n$, then the key to restore the softmax of the whole $X$ from the local softmax of $X_1$ and $X_2$ is to re-calculate the new normalization factor $l$ and new maximum value $m$.
 
 $$
@@ -41,7 +41,7 @@ $$
 \end{align}
 $$
 
-* where the last two steps are to address the $\exp$ explosion problem with the help of $\text{log1p}$ operation (*See the Pytorch Log1p Functional in [References](#references)*). Therefore, for each online attention step, we just need to apply the local block of attention to get $O^{(bkv_j)}_{bq_i}$ along with the local statistics $lse^{(bkv_j)}_{bq_i}$, and then update the global statistics $lse$ to calibrate the global output $O$ for the rows indexing in the range $[bq_i\cdot bq, (bq_i + 1)\cdot bq)$, as the equations shown above.
+* where the last two steps are to address the $\exp$ explosion problem with the help of $\text{log1p}$ operation (*See the Pytorch Log1p Functional in [References](#references)*). Therefore, for each online attention step, we just need to apply the local block of attention to get $O_{bq_i}^{(bkv_j)}$ along with the local statistics $lse^{(bkv_j)}_{bq_i}$, and then update the global statistics $lse$ to calibrate the global output $O$ for the rows indexing in the range $[bq_i\cdot bq, (bq_i + 1)\cdot bq)$, as the equations shown above.
 
 * To make full use of the implemented `OfflineSlidingWindowAttn` module in [task1](./task1.md), the `OnlineSlidingWindowAttn` module just inherits the `OfflineSlidingWindowAttn` module, where the input arguments are different in several ways as follows:
     * To simplify the diversity of inputs, the `OnlineSlidingWindowAttn` module only accepts the block of $Q_{bq_i},K_{bkv_j},V_{bkv_j}$ in `AttnQKVLayout.BSHD` layout and `AttnQKVPackFormat.Q_K_V` packing format, thus no arguments are required for the QKV packing format and layout.
@@ -49,12 +49,12 @@ $$
     * To better prepare for the online attention forward pass during the initialization, we provide `block_size` and `seqlen` for $Q$ and $K,V$ respectively in the argument list of `__init__` method. Therefore, you can pre-calculate something such as the full attention mask in the `__init__` method.
     * Since the layout is fixed to `AttnQKVLayout.BSHD`, we don't need neither `cu_seqlens_q` nor `cu_seqlens_kv` anymore in the argument list of the forward method.
     * The `q,k,v` arguments for the forward method are only a single block of $Q_{bq_i},K_{bkv_j},V_{bkv_j}$, where the $bq_i$ and $bkv_j$ are given as arguments `block_idx_q` and `block_idx_kv` respectively.
-    * The global output $O$ and the global statistics $lse$ (*each entry is either partially updated already or set to initial value as `0` for `O` and `-∞` for `lse`*) are given as arguments `global_o` and `global_lse` respectively, and you should update them **in-place**, thus no return value is needed for the forward method.
+    * The global output $O$ and the global statistics $lse$ (*each entry is either partially updated already or set to the initial value as `0` for `O` and `-∞` for `lse`*) are given as arguments `global_o` and `global_lse` respectively, and you should update them **in-place**, thus no return value is needed for the forward method.
 
 
 #### Summary
 
-In summary, you should implement this `OnlineSlidingWindowAttn` module, which takes a block of $Q_{bq_i},K_{bkv_j},V_{bkv_j}$ in `AttnQKVLayout.BSHD` layout and `AttnQKVPackFormat.Q_K_V` packing format given the block index $bq_i$ and $bkv_j$, applies the local `offline sliding window attention` operation on this block, gets the local output $O^{(bkv_j)}_{bq_i}$ along with the local statistics $lse^{(bkv_j)}_{bq_i}$, and then updates the given global output $O$ and the global statistics $lse$ accordingly in-place.
+In summary, you should implement this `OnlineSlidingWindowAttn` module, which takes a block of $Q_{bq_i},K_{bkv_j},V_{bkv_j}$ in `AttnQKVLayout.BSHD` layout and `AttnQKVPackFormat.Q_K_V` packing format given the block index $bq_i$ and $bkv_j$, applies the local `offline sliding window attention` operation on this block, gets the local output $O_{bq_i}^{(bkv_j)}$ along with the local statistics $lse^{(bkv_j)}_{bq_i}$, and then updates the given global output $O$ and the global statistics $lse$ accordingly in-place.
 
 
 #### Notice
