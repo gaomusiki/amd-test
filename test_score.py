@@ -68,17 +68,17 @@ attn_qkv_pack_format_ref_to_student = {
 score_test_cases = {
     "task1": {
         "case1": {
-            "score": 30,
+            "score": 10,
             
-            "b": 1,
-            "sq": 6,
-            "skv": 6,
-            "hq": 1,
-            "hkv": 1,
-            "hd": 4,
+            "b": 2,
+            "sq": 1024,
+            "skv": 1024,
+            "hq": 8,
+            "hkv": 8,
+            "hd": 128,
             
-            "qkv_pack_format": AttnQKVPackFormatRef.QKV,
-            "qkv_layout": AttnQKVLayoutRef.SBHD,
+            "qkv_pack_format": AttnQKVPackFormatRef.Q_K_V,
+            "qkv_layout": AttnQKVLayoutRef.BSHD,
             
             "seqlens_q": None,
             "seqlens_kv": None,
@@ -86,53 +86,205 @@ score_test_cases = {
             "window_size": None,
             "causal": True,
             
-            "softmax_dropout_rate": 0.1,
+            "softmax_dropout_rate": 0.0,
+            "softmax_dropout_seed": SEED + 1,
             "softmax_scale": None,
             "softmax_cap": None,
-            "softmax_temp": 0.8,
-            "softmax_clip_range": (-0.03, 1.03),
+            "softmax_temp": 1.0,
+            "softmax_clip_range": (0., 1.),
             
-            "group_size": 1,
+            "group_size": 8,
             "eps": 1e-5,
             "init_range": (-1.1, 1.1),
+            "init_seed": SEED + 1,
+            
+            "activation_dtype": torch.bfloat16,
+            "activation_device": "cuda",
+            
+            "param_dtype": torch.float32,
+            "param_device": "cuda",
+        },
+        "case2": {
+            "score": 10,
+            
+            "b": 4,
+            "sq": 2048,
+            "skv": 1024,
+            "hq": 16,
+            "hkv": 4,
+            "hd": 64,
+            
+            "qkv_pack_format": AttnQKVPackFormatRef.Q_K_V,
+            "qkv_layout": AttnQKVLayoutRef.BSHD,
+            
+            "seqlens_q": None,
+            "seqlens_kv": None,
+            
+            "window_size": 64,
+            "causal": True,
+            
+            "softmax_dropout_rate": 0.1,
+            "softmax_dropout_seed": SEED + 2,
+            "softmax_scale": None,
+            "softmax_cap": None,
+            "softmax_temp": 0.85,
+            "softmax_clip_range": (0., 1.),
+            
+            "group_size": 8,
+            "eps": 1e-5,
+            "init_range": (-1.2, 1.2),
+            "init_seed": SEED + 2,
+            
+            "activation_dtype": torch.bfloat16,
+            "activation_device": "cuda",
+            
+            "param_dtype": torch.float32,
+            "param_device": "cuda",
+        },
+        "case3": {
+            "score": 10,
+            
+            "b": 4,
+            "sq": 1024,
+            "skv": 2048,
+            "hq": 8,
+            "hkv": 1,
+            "hd": 128,
+            
+            "qkv_pack_format": AttnQKVPackFormatRef.Q_KV,
+            "qkv_layout": AttnQKVLayoutRef.SBHD,
+            
+            "seqlens_q": None,
+            "seqlens_kv": None,
+            
+            "window_size": None,
+            "causal": False,
+            
+            "softmax_dropout_rate": 0.15,
+            "softmax_dropout_seed": SEED + 3,
+            "softmax_scale": None,
+            "softmax_cap": 10,
+            "softmax_temp": 0.9,
+            "softmax_clip_range": (0., 1.),
+            
+            "group_size": 16,
+            "eps": 1e-5,
+            "init_range": (-1.3, 1.3),
+            "init_seed": SEED + 3,
+            
+            "activation_dtype": torch.bfloat16,
+            "activation_device": "cuda",
+            
+            "param_dtype": torch.float32,
+            "param_device": "cuda",
+        },
+        "case4": {
+            "score": 10,
+            
+            "b": 4,
+            "sq": 3072,
+            "skv": 3072,
+            "hq": 4,
+            "hkv": 4,
+            "hd": 64,
+            
+            "qkv_pack_format": AttnQKVPackFormatRef.QKV,
+            "qkv_layout": AttnQKVLayoutRef.BSHD,
+            
+            "seqlens_q": None,
+            "seqlens_kv": None,
+            
+            "window_size": 128,
+            "causal": False,
+            
+            "softmax_dropout_rate": 0.05,
+            "softmax_dropout_seed": SEED + 4,
+            "softmax_scale": None,
+            "softmax_cap": 20,
+            "softmax_temp": 0.9,
+            "softmax_clip_range": (-0.03, 1.03),
+            
+            "group_size": 4,
+            "eps": 2e-5,
+            "init_range": (-1.4, 1.4),
+            "init_seed": SEED + 4,
             
             "activation_dtype": torch.bfloat16,
             "activation_device": "cpu",
             
             "param_dtype": torch.float32,
-            "param_device": "cpu",
+            "param_device": "cuda",
         },
-        "case2": {
-            "score": 30,
+        "case5": {
+            "score": 10,
             
-            "b": 1,
-            "sq": 7,
-            "skv": 5,
-            "hq": 2,
+            "b": 4,
+            "sq": 512,
+            "skv": 1536, # 1024 + 512
+            "hq": 8,
+            "hkv": 4,
+            "hd": 128,
+            
+            "qkv_pack_format": AttnQKVPackFormatRef.Q_K_V,
+            "qkv_layout": AttnQKVLayoutRef.THD,
+            
+            "seqlens_q": [100, 1, 200, 11, 50, 150],
+            "seqlens_kv": [100, 24, 400, 400, 25, 75],
+            
+            "window_size": 32,
+            "causal": True,
+            
+            "softmax_dropout_rate": 0.0,
+            "softmax_dropout_seed": SEED + 5,
+            "softmax_scale": None,
+            "softmax_cap": None,
+            "softmax_temp": 0.95,
+            "softmax_clip_range": (-0.03, 1.03),
+            
+            "group_size": 8,
+            "eps": 2e-5,
+            "init_range": (-1.5, 1.5),
+            "init_seed": SEED + 5,
+            
+            "activation_dtype": torch.bfloat16,
+            "activation_device": "cuda",
+            
+            "param_dtype": torch.float32,
+            "param_device": "cuda",
+        },
+        "case6": {
+            "score": 10,
+            
+            "b": 2,
+            "sq": 512,
+            "skv": 1536, # 1024 + 512
+            "hq": 16,
             "hkv": 1,
-            "hd": 4,
+            "hd": 128,
             
             "qkv_pack_format": AttnQKVPackFormatRef.Q_KV,
             "qkv_layout": AttnQKVLayoutRef.THD,
             
-            "seqlens_q": [1, 2, 4],
-            "seqlens_kv": [2, 2, 1],
+            "seqlens_q": [100, 1, 200, 11, 50, 150],
+            "seqlens_kv": [100, 24, 400, 400, 25, 75],
             
-            "window_size": 1,
+            "window_size": 4,
             "causal": False,
             
-            "softmax_dropout_rate": 0.0,
+            "softmax_dropout_rate": 0.1,
+            "softmax_dropout_seed": SEED + 6,
             "softmax_scale": None,
             "softmax_cap": 10,
-            "softmax_temp": 1.0,
-            "softmax_clip_range": (-0.01, 1.01),
+            "softmax_temp": 0.95,
+            "softmax_clip_range": (-0.03, 1.03),
             
-            "group_size": 2,
+            "group_size": 8,
             "eps": 1e-5,
-            "init_range": (-1.2, 1.2),
+            "init_range": (-1.6, 1.6),
+            "init_seed": SEED + 6,
             
-            "activation_dtype": torch.float32,
-            "activation_device": "cpu",
+            "activation_dtype": torch.bfloat16,
+            "activation_device": "cuda",
             
             "param_dtype": torch.float32,
             "param_device": "cpu",
@@ -140,68 +292,136 @@ score_test_cases = {
     },
     "task2": {
         "case1": {
-            "score": 20,
+            "score": 10,
             
-            "b": 1,
-            "sq": 7,
-            "skv": 5,
-            "hq": 1,
-            "hkv": 1,
-            "hd": 4,
+            "b": 2,
+            "sq": 1024,
+            "skv": 1024,
+            "hq": 8,
+            "hkv": 8,
+            "hd": 128,
             
-            "bq": 3,
-            "bkv": 2,
-            "bqi": 1,
-            "bkvi": 1,
+            "bq": 32,
+            "bkv": 32,
+            "bqi": 0,
+            "bkvi": 0,
             
-            "window_size": 2,
+            "window_size": 16,
             "causal": True,
             
             "softmax_scale": None,
-            "softmax_cap": 10,
-            "softmax_temp": 1.0,
+            "softmax_cap": None,
+            "softmax_temp": 0.85,
             
-            "group_size": 2,
+            "group_size": 8,
             "eps": 1e-5,
-            "init_range": (-1.05, 1.05),
+            "init_range": (-1.01, 1.01),
+            "init_seed": SEED + 1,
             
             "activation_dtype": torch.float32,
-            "activation_device": "cpu",
+            "activation_device": "cuda",
             
             "param_dtype": torch.float32,
-            "param_device": "cpu",
+            "param_device": "cuda",
         },
         "case2": {
-            "score": 20,
+            "score": 10,
             
-            "b": 1,
-            "sq": 7,
-            "skv": 5,
-            "hq": 1,
-            "hkv": 1,
-            "hd": 4,
+            "b": 2,
+            "sq": 1024,
+            "skv": 512,
+            "hq": 8,
+            "hkv": 2,
+            "hd": 128,
             
-            "bq": 3,
-            "bkv": 2,
+            "bq": 32,
+            "bkv": 16,
             "bqi": 2,
-            "bkvi": 0,
+            "bkvi": 8,
             
-            "window_size": 1,
-            "causal": False,
+            "window_size": 12,
+            "causal": True,
             
             "softmax_scale": None,
             "softmax_cap": None,
             "softmax_temp": 0.9,
             
-            "group_size": 1,
+            "group_size": 16,
             "eps": 1e-5,
-            "init_range": (-1.25, 1.25),
+            "init_range": (-1.02, 1.02),
+            "init_seed": SEED + 2,
+            
+            "activation_dtype": torch.float32,
+            "activation_device": "cuda",
+            
+            "param_dtype": torch.float32,
+            "param_device": "cuda",
+        },
+        "case3": {
+            "score": 10,
+            
+            "b": 2,
+            "sq": 1088, # 1024 + 64
+            "skv": 2080, # 2048 + 32
+            "hq": 8,
+            "hkv": 2,
+            "hd": 128,
+            
+            "bq": 128,
+            "bkv": 64,
+            "bqi": 0,
+            "bkvi": 32,
+            
+            "window_size": 48,
+            "causal": False,
+            
+            "softmax_scale": None,
+            "softmax_cap": 10,
+            "softmax_temp": 0.9,
+            
+            "group_size": 16,
+            "eps": 1e-5,
+            "init_range": (-1.03, 1.03),
+            "init_seed": SEED + 3,
+            
+            "activation_dtype": torch.float32,
+            "activation_device": "cuda",
+            
+            "param_dtype": torch.float32,
+            "param_device": "cpu",
+        },
+        "case4": {
+            "score": 10,
+            
+            "b": 2,
+            "sq": 1090, # 1024 + 64 + 2
+            "skv": 2100, # 2048 + 32 + 20
+            "hq": 8,
+            "hkv": 2,
+            "hd": 128,
+            
+            "bq": 128,
+            "bkv": 128,
+            "bqi": 8,
+            "bkvi": 16,
+            
+            "window_size": 96,
+            "causal": True,
+            
+            "softmax_scale": None,
+            "softmax_cap": 10,
+            "softmax_temp": 0.9,
+            
+            "group_size": 16,
+            "eps": 1e-5,
+            "init_range": (-1.03, 1.03),
+            "init_seed": SEED + 4,
             
             "activation_dtype": torch.float32,
             "activation_device": "cpu",
             
             "param_dtype": torch.float32,
-            "param_device": "cpu",
+            "param_device": "cuda",
         }
     },
 }
@@ -238,6 +458,9 @@ def construct_offline_attn_args(
             ], dim=0)
             for x in (seqlens_q, seqlens_kv)
         ]
+        
+        assert cu_seqlens_q[-1] == b*sq, f"cu_seqlens_q[-1]({cu_seqlens_q[-1]}) == b*sq({b*sq})"
+        assert cu_seqlens_kv[-1] == b*skv, f"cu_seqlens_kv[-1]({cu_seqlens_kv[-1]}) == b*skv({b*skv})"
         
         q, k, v = [
             x.view(-1, *x.shape[-2:]).contiguous() 

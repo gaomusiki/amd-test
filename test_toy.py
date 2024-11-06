@@ -178,6 +178,9 @@ def construct_offline_attn_args(
             for x in (seqlens_q, seqlens_kv)
         ]
         
+        assert cu_seqlens_q[-1] == b*sq, f"cu_seqlens_q[-1]({cu_seqlens_q[-1]}) == b*sq({b*sq})"
+        assert cu_seqlens_kv[-1] == b*skv, f"cu_seqlens_kv[-1]({cu_seqlens_kv[-1]}) == b*skv({b*skv})"
+        
         q, k, v = [
             x.view(-1, *x.shape[-2:]).contiguous() 
             for x in (q, k, v)
