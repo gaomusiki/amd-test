@@ -7,12 +7,13 @@ You are required to implement a pytorch module named `OfflineSlidingWindowAttn` 
 
 #### Explanation
 
-* The multi-head `Attention` module is an essential building block in Transformer (*See the Transformer paper in [References](#references)*) . It takes three tensors as inputs: query tensor with the shape `[batch_size, seq_len_q, num_head_q, head_dim]` (*denoted as $Q$ with the shape `[b, sq, hq, hd]`*), key tensor and value tensor with the same shape `[batch_size, seq_len_kv, num_head_kv, head_dim]` (*denoted as $K$, $V$ with the shape `[b, skv, hkv, hd]` respectively*). 
+* The multi-head `Attention` module is an essential building block in Transformer (*See the Transformer paper in [References](#references)*) . It takes three tensors as inputs: query tensor with the shape `[batch_size, seq_len_q, num_head_q, head_dim]` (denoted as $Q$ with the shape `[b, sq, hq, hd]`), key tensor and value tensor with the same shape `[batch_size, seq_len_kv, num_head_kv, head_dim]` (denoted as $K$, $V$ with the shape `[b, skv, hkv, hd]` respectively). 
 * Each row tensor $q_i$ in $Q$ can be represented as an embedded latent "query message" for the $i$-th token, inquiring for some knowledge embedded in a "knowledge base" $V$, where each row tensor $v_j$ can be viewed as an embedded latent "knowledge archive" for the $j$-th token.
 * To aggregate all important knowledge in $V$ and ignore other irrelevant ones,  each $v_j$ corresponds to an embedded latent "key word" $k_j$, where the dot-product scalar $q_i^{\text T}k_j$ of any $q_i$ with this $k_j$ can be seen as the "similarity score" between the query message $q_i$ with this knowledge archive $v_j$. 
 * Thus the aggregate knowledge $o_i$ for each query $q_i$ can be represented as a weighted-sum of all $v_j$ in $V$ as $o_i := \sum\limits_j a^{(i)}_jv_j$, where the weight vector $a^{(i)}$ is comprised of all "normalized" dot-product similarity scalars of $q_i$ with each $k_j$, as mentioned above.
 * As for the "normalization" of weights, the most common choice is to apply `softmax` operation, which is known as the "soft" `maximalization` operation, in order to only "pay attention to" the knowledge that really matters with the highest similarity scores.
 * Therefore, the whole `attention` operation can be simply written as (*for each batch and each head*):
+
 $$
 \begin{align}
 &\text{Attention}(Q, K, V) = AV, \\
@@ -20,6 +21,7 @@ $$
 &\space P = QK^{\text T} + M\in \mathbb{R}^{sq\times skv}
 \end{align}
 $$
+
 * where $M$ denotes the binary attention mask where each entry is valued in $\{-\infty, 0\}$, to either mask out the irrelevant pairs of $(q_i, k_j)$ with the value of $-\infty$, or keep the relevant pairs with the value of $0$. For example, to apply `causal language modeling`, any token can only attend to the previous tokens and itself, i.e. $q_i$ can only attend to $k_j$ where $j \le i$ at most.
 
 * For this `OfflineSlidingWindowAttn`, we need to implement the $M$ in the `sliding window` style, i.e. $q_i$ can only attend to $k_j$ where $j \in [i-w, i+w]$, where $w$ denotes the window size, and in addition to the `causal` style, $q_i$ is only allowed to attend to $k_j$ where $j \in [i-w, i]$.
@@ -29,22 +31,24 @@ $$
     * 2. `softmax capping`: to adaptively control the magnitude of $P$ except for `softmax temperature`, we can apply `softmax capping` to $P$ as $cap\cdot \text{tanh}(\frac{P}{cap})$, where $cap$ is often a large positive number. Since it can be seen as an adaptive version of `softmax temperature`, we will **only apply either one of them** in one forward pass.
     * 3. `softmax clipping`: to prevent the outliers in $A$ from growing, we can apply `softmac clipping` to $A$ as $\text{clip}((r-l)\cdot A + l, 0, 1)$, where the range $[l,r]$ is super-range over $[0,1]$, i.e. $l \le 0$ and $r \ge 1$, to affine the value range of $A$ from $[0,1]$ to $[l,r]$, and then clip back to $[0,1]$, to cut-off the outliers.
     * 4. `softmax dropout`: to improve the robustness of $A$, we can apply `softmax dropout` to $A$ as $\text{dropout}_p(A)$ with the dropout rate $p \in [0,1]$.
-    * 5. `QK layer normalization`: to further address the large values in $P$ which lead to attention weights degeneration (*i.e. $A$ almost becomes one-hot*), we can pre-apply `layer normalization` to $Q$ and $K$ respectively. But for this assignment, we change the `layer normalization` to `group rms normalization`, to fully make use of the `GroupRMSNorm` module we implemented in the previous assignment.
+    * 5. `QK layer normalization`: to further address the large values in $P$ which lead to attention weights degeneration (i.e. $A$ almost becomes one-hot), we can pre-apply `layer normalization` to $Q$ and $K$ respectively. But for this assignment, we change the `layer normalization` to `group rms normalization`, to fully make use of the `GroupRMSNorm` module we implemented in the previous assignment.
 
 * Therefore, the whole `offline sliding window attetion` operation can be written as (*for each batch and each head*):
+
+
 $$
 \begin{align}
 &\text{OfflineSlidingWindowAttention}(Q, K, V) = \widehat AV, \\
-&\text{where} \space \widehat A = \text{dropout}_p(\text{clip}((r-l)\tilde A + l, 0, 1)), \\
-&\space \tilde A = \text{softmax}_{row-wise}(\tilde P), \\
-&\space \tilde P = 
-\begin{cases}
+&\text{where} \space \widehat A = \text{dropout}\space_p(\text{clip}((r-l)\tilde A + l, 0, 1)), \\
+&\space \tilde A = \text{softmax}\space_{row-wise}(\tilde P), \\
+&\space \tilde P = \begin{cases}
 \cfrac{scale\cdot \tilde Q \tilde K^{\text T}}{temp} + M_{sw} \space(+ M_{causal}), & \text{softmax temperature} \\
 cap\cdot \text{tanh}(\cfrac{scale\cdot \tilde Q\tilde K^{\text T}}{cap}) + M_{sw} \space(+ M_{causal}), & \text{softmax capping} \\
 \end{cases}, \\
-&\text{where}\space \tilde Q = \text{GroupRMSNorm}(Q), \space \tilde K = \text{GroupRMSNorm}(K)
+&\text{where}\space \tilde Q = \text{GroupRMSNorm}(Q), \space \tilde K = \text{GroupRMSNorm}(K) \\
 \end{align}
 $$
+
 
 * In the meanwhile, to make the `OfflineSlidingWindowAttn` module more flexible for different inputs:
     * 1. We design an enum class named `AttnQKVPackFormat` in `src/modeling/attention.py`, which defines how $Q,K,V$ are packed as inputs:

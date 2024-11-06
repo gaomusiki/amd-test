@@ -120,7 +120,7 @@ toy_test_cases = {
             "bq": 3,
             "bkv": 2,
             "bqi": 1,
-            "bkvi": 1,
+            "bkvj": 1,
             
             "window_size": 2,
             "causal": True,
@@ -147,7 +147,7 @@ toy_test_cases = {
             "bq": 3,
             "bkv": 2,
             "bqi": 2,
-            "bkvi": 0,
+            "bkvj": 0,
             
             "window_size": 1,
             "causal": False,
@@ -238,7 +238,7 @@ def construct_online_attn_args(
     bq: int,
     bkv: int,
     bqi: int,
-    bkvi: int,
+    bkvj: int,
     dtype: torch.dtype = PARAM_DTYPE,
     device: str = PARAM_DEVICE,
     seed: int = SEED,
@@ -246,7 +246,7 @@ def construct_online_attn_args(
     nbq = (sq + bq - 1) // bq
     nbk = (skv + bkv - 1) // bkv
     assert bqi < nbq, f"bqi({bqi}) >= nbq({nbq})"
-    assert bkvi < nbk, f"bkvi({bkvi}) >= nbk({nbk})"
+    assert bkvj < nbk, f"bkvj({bkvj}) >= nbk({nbk})"
     
     torch.manual_seed(seed)
     q = torch.randn((b, sq, hq, hd), dtype=dtype, device=device)
@@ -260,8 +260,8 @@ def construct_online_attn_args(
     v = F.pad(v, pad=(0, 0, 0, 0, 0, nbk*bkv - skv), mode="constant", value=0)
     
     q = q[:, bqi*bq:(bqi+1)*bq, :, :]
-    k = k[:, bkvi*bkv:(bkvi+1)*bkv, :, :]
-    v = v[:, bkvi*bkv:(bkvi+1)*bkv, :, :]
+    k = k[:, bkvj*bkv:(bkvj+1)*bkv, :, :]
+    v = v[:, bkvj*bkv:(bkvj+1)*bkv, :, :]
     
     return q, k, v, global_o, global_lse
 
@@ -373,7 +373,7 @@ def test_task2(case_key, case_config):
     # set hyper parameters
     b, sq, skv = case_config["b"], case_config["sq"], case_config["skv"], 
     hq, hkv, hd = case_config["hq"], case_config["hkv"], case_config["hd"]
-    bq, bkv, bqi, bkvi = case_config["bq"], case_config["bkv"], case_config["bqi"], case_config["bkvi"]
+    bq, bkv, bqi, bkvj = case_config["bq"], case_config["bkv"], case_config["bqi"], case_config["bkvj"]
     window_size, causal = case_config["window_size"], case_config["causal"]
     softmax_scale, softmax_cap, softmax_temp = case_config["softmax_scale"], \
         case_config["softmax_cap"], case_config["softmax_temp"]
@@ -385,7 +385,7 @@ def test_task2(case_key, case_config):
 
     # construct the input tensors
     q, k, v, global_o, global_lse = construct_online_attn_args(
-        b, sq, skv, hq, hkv, hd, bq, bkv, bqi, bkvi,
+        b, sq, skv, hq, hkv, hd, bq, bkv, bqi, bkvj,
         dtype=activation_dtype, device=activation_device, seed=SEED,
     )
     global_o_ref, global_lse_ref = global_o.clone(), global_lse.clone()
@@ -418,7 +418,7 @@ def test_task2(case_key, case_config):
         global_o=global_o_ref,
         global_lse=global_lse_ref,
         block_idx_q=bqi, 
-        block_idx_kv=bkvi,
+        block_idx_kv=bkvj,
     )
     
     # instantiate the student's module
@@ -449,7 +449,7 @@ def test_task2(case_key, case_config):
         global_o=global_o,
         global_lse=global_lse,
         block_idx_q=bqi, 
-        block_idx_kv=bkvi,
+        block_idx_kv=bkvj,
     )
     
     # check if the output tensors are correct
