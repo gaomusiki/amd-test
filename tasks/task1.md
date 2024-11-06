@@ -63,15 +63,17 @@ $$
 
 #### Summary
 
-In summary, you should implement this `OfflineSlidingWindowAttn` module, which takes $Q,K,V$ in different packing formats and different layouts as inputs, applies the `offline sliding window attention` operation described above, and returns the output tensor $O$ in the same layout as $Q$.
+In summary, you should implement this `OfflineSlidingWindowAttn` module, which takes $Q,K,V$ in different packing formats and different layouts as inputs (along the `cu_seqlens_q` and `cu_seqlens_kv` if the layout is `AttnQKVLayout.THD`), applies the `offline sliding window attention` operation described above, and returns the output tensor $O$ in the same layout as $Q$.
 
 #### Notice
 
 * The `dtype` and `device` in arguments are for the learnable parameters in `GroupRMSNorm`, which may be different from the ones of $Q,K,V$.
 * The meta attributes of the returned $O$ including `dtype`, `device` and `layout` should be the same as $Q$.
-* The `GroupRMSNorm` of $Q,K$ are individual sub-layers of `OfflineSlidingWindowAttn`, since `GroupRMSNorm` only accept the 3D tensor with the shape `[batch_size, seq_len, hidden_size]`, and the `hidden-size = num_heads * head_dim` may vary between $Q$ and $K$.
-* When the "num_heads"-dim are different between $Q$ and $K,V$ (*i.e. in the `MQA` style or `GQA` style, see the papers in [References](#references) for more details*), we follow the same **"kv-heads repeating" strategy** to make $Q$ and $K,V$ match in the number of heads (*See Llama Attention Layer in [References](#references) for more details*).
-* When the "sequence"-dim are different between $Q$ and $K,V$ (*e.g. in the cross-attention or the autoregressive decoding phase*), the attention mask $M$ is not a square matrix but a rectangle matrix with the shape `[sq, skv]`, also seen as a "slide" of the latent full square matrix with the shape `[max(sq,skv), max(sq,skv)]`. Hence there comes a question: which rectangle slide should we choose from the full matrix? For this `OfflineSlidingWindowAttn` module, we'd like to choose the one which aligns the **bottom right part** of the full square attention matrix following the flash-attn's settings (*See the Flash Attention Interface in [References](#references) for more examples*).
+* Only if the argument `softmax_cap` is set to `None`, can we apply the `softmax temperature` strategy with the argument `softmax_temp`.
+* All the arguments are ensured to be in their valid ranges.
+* The `GroupRMSNorm` of $Q,K$ are individual sub-layers of `OfflineSlidingWindowAttn`, since `GroupRMSNorm` only accept the 3D tensor with the shape `[batch_size, seq_len, hidden_size]`, and the `hidden_size = num_heads * head_dim` may vary between $Q$ and $K$. Moreover, we ensure the `head_dim` can be divided by `group_size`, i.e. no group will cross two different heads along the hidden dimension.
+* When the "num_heads"-dim are different between $Q$ and $K,V$ (*i.e. in the `MQA` style or `GQA` style, see the papers in [References](#references) for more details*), we follow the same **"kv-heads repeating" strategy** to make $Q$ and $K,V$ match in the number of heads (*See the Llama Attention Layer and the Pytorch Repeat Interleave Functional in [References](#references) for more details*).
+* When the "sequence"-dim are different between $Q$ and $K,V$ (*e.g. in the cross-attention or the autoregressive decoding phase*), the attention mask $M$ is not a square matrix but a rectangle matrix with the shape `[sq, skv]`, also seen as a "slide" of the latent full square matrix with the shape `[max(sq,skv), max(sq,skv)]`. Hence there comes a question: which rectangle slide should we choose from the full matrix? For this `OfflineSlidingWindowAttn` module, we'd like to choose the one which aligns the **bottom right part** of the full square attention matrix following the flash-attention's settings (*See the Flash Attention Interface in [References](#references) for more examples*).
 
 
 #### References
@@ -81,14 +83,14 @@ In summary, you should implement this `OfflineSlidingWindowAttn` module, which t
 **!! Remember: it is a fundemental and essential capability to search, read, think and learn from the paper, source code, and official documentation for your answer, try NOT to rely too much on some biased and superficial blogs, e.g. CSDN !!**
 
 
+* [Nvidia Methods of Improving LLM Training Stability](https://arxiv.org/pdf/2410.16682)
 * [Llama Attention Layer](https://github.com/huggingface/transformers/blob/main/src/transformers/models/llama/modeling_llama.py#L277)
 * [Google MHA paper](https://proceedings.neurips.cc/paper_files/paper/2017/file/3f5ee243547dee91fbd053c1c4a845aa-Paper.pdf)
 * [Google MQA paper](https://arxiv.org/pdf/1911.02150)
 * [Google GQA paper](https://arxiv.org/pdf/2305.13245)
+* [Pytorch Repeat Interleave Functional](https://pytorch.org/docs/stable/generated/torch.repeat_interleave.html#torch.repeat_interleave)
 * [Transformer paper](https://proceedings.neurips.cc/paper/2017/file/3f5ee243547dee91fbd053c1c4a845aa-Paper.pdf)
-* [Pytorch SDPA Functional](https://pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html#torch.nn.functional.scaled_dot_product_attention)
 * [Flash Attention 2 Paper](https://arxiv.org/pdf/2307.08691.pdf)
 * [Flash Attention Interface](https://github.com/Dao-AILab/flash-attention/blob/main/flash_attn/flash_attn_interface.py)
+* [Pytorch SDPA Functional](https://pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html#torch.nn.functional.scaled_dot_product_attention)
 * [Pytorch FlexAttention Functional](https://pytorch.org/docs/main/nn.attention.flex_attention.html#module-torch.nn.attention.flex_attention)
-* [Nvidia Methods of Improving LLM Training Stability](https://arxiv.org/pdf/2410.16682)
-* [Pytorch Repeat Interleave Functional](https://pytorch.org/docs/stable/generated/torch.repeat_interleave.html#torch.repeat_interleave)
