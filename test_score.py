@@ -644,6 +644,9 @@ def test_task2(case_key, case_config):
     atol, rtol = case_config.pop("atol", ATOL), case_config.pop("rtol", RTOL)
     activation_dtype, param_dtype = case_config["activation_dtype"], case_config["param_dtype"]
     activation_device, param_device = case_config["activation_device"], case_config["param_device"]
+    
+    # check if OnlineSlidingWindowAttn is a subclass of OfflineSlidingWindowAttn
+    assert issubclass(OnlineSlidingWindowAttn, OfflineSlidingWindowAttn), "OnlineSlidingWindowAttn is not a subclass of OfflineSlidingWindowAttn"
 
     # construct the input tensors
     q, k, v, global_o, global_lse = construct_online_attn_args(

@@ -62,6 +62,7 @@ In summary, you should implement this `OnlineSlidingWindowAttn` module, which ta
 * First of all, we inherit the same notice mentioned in [task1](./task1.md).
 * The `dtype` and `device` of `q,k,v,global_o` are ensured to be the same, while we keep the `dtype` of `global_lse` as `torch.float32` to maintain the high precision to reduce the accumulation error.
 * When the `seqlen` can not be fully divided by the `block_size`, the last in-complete block will be **padded** at the end of the sequence-dim to match the corresponding `block_size`, where the padding entries are filled with zeros.
+* The `block_idx_q` and `block_idx_kv` are ensured to be in their corresponding valid ranges.
 * **Note that** any online attention step in the forward pass of `OnlineSlidingWindowAttn` module should be regarded as an inner iterative step for the corresponding offline attention, i.e. if we tranverse each $bq_i \in [0, \frac{sq}{bq}]$ and $bkv_j \in [0, \frac{skv}{bkv}]$ on this online attention module, the final updated output $O$ should be the same as the corresponding offline attention module, ignoring the accumulation error.
 
 
