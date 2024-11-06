@@ -75,7 +75,7 @@ toy_test_cases = {
             
             "softmax_dropout_rate": 0.0,
             "softmax_scale": None,
-            "softmax_cap": 10,
+            "softmax_cap": 10.0,
             "softmax_temp": 1.0,
             "softmax_clip_range": (-0.01, 1.01),
             
@@ -105,7 +105,7 @@ toy_test_cases = {
             "causal": True,
             
             "softmax_scale": None,
-            "softmax_cap": 10,
+            "softmax_cap": 10.0,
             "softmax_temp": 1.0,
             
             "group_size": 2,

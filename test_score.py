@@ -163,7 +163,7 @@ score_test_cases = {
             "softmax_dropout_rate": 0.15,
             "softmax_dropout_seed": SEED + 3,
             "softmax_scale": None,
-            "softmax_cap": 10,
+            "softmax_cap": 10.0,
             "softmax_temp": 0.9,
             "softmax_clip_range": (0., 1.),
             
@@ -200,7 +200,7 @@ score_test_cases = {
             "softmax_dropout_rate": 0.05,
             "softmax_dropout_seed": SEED + 4,
             "softmax_scale": None,
-            "softmax_cap": 20,
+            "softmax_cap": 20.0,
             "softmax_temp": 0.9,
             "softmax_clip_range": (-0.03, 1.03),
             
@@ -274,7 +274,7 @@ score_test_cases = {
             "softmax_dropout_rate": 0.1,
             "softmax_dropout_seed": SEED + 6,
             "softmax_scale": None,
-            "softmax_cap": 10,
+            "softmax_cap": 10.0,
             "softmax_temp": 0.95,
             "softmax_clip_range": (-0.03, 1.03),
             
@@ -376,7 +376,7 @@ score_test_cases = {
             "causal": False,
             
             "softmax_scale": None,
-            "softmax_cap": 10,
+            "softmax_cap": 10.0,
             "softmax_temp": 0.9,
             
             "group_size": 16,
@@ -409,7 +409,7 @@ score_test_cases = {
             "causal": True,
             
             "softmax_scale": None,
-            "softmax_cap": 10,
+            "softmax_cap": 10.0,
             "softmax_temp": 0.9,
             
             "group_size": 16,
