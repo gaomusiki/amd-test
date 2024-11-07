@@ -210,7 +210,7 @@ score_test_cases = {
             "init_seed": SEED + 4,
             
             "activation_dtype": torch.bfloat16,
-            "activation_device": "cpu",
+            "activation_device": "cuda",
             
             "param_dtype": torch.float32,
             "param_device": "cuda",
@@ -287,7 +287,7 @@ score_test_cases = {
             "activation_device": "cuda",
             
             "param_dtype": torch.float32,
-            "param_device": "cpu",
+            "param_device": "cuda",
         }
     },
     "task2": {
@@ -388,7 +388,7 @@ score_test_cases = {
             "activation_device": "cuda",
             
             "param_dtype": torch.float32,
-            "param_device": "cpu",
+            "param_device": "cuda",
         },
         "case4": {
             "score": 10,
@@ -418,7 +418,7 @@ score_test_cases = {
             "init_seed": SEED + 4,
             
             "activation_dtype": torch.float32,
-            "activation_device": "cpu",
+            "activation_device": "cuda",
             
             "param_dtype": torch.float32,
             "param_device": "cuda",
