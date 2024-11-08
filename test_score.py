@@ -1,5 +1,7 @@
 import sys
 import os
+os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
+os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 
 from typing import List, Optional, Sequence
 
@@ -8,6 +10,7 @@ import pytest
 import torch
 import torch.nn.functional as F
 from torch.testing import assert_close
+torch.use_deterministic_algorithms(True)
 
 from test_utils import (
     ResultCapture, score_results,
