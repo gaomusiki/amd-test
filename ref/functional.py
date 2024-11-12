@@ -173,7 +173,9 @@ def correct_attn_lse(
     # formula: lse = log(exp(lse1) + exp(lse2))
     #              = lse1 + log(1 + exp(lse2 - lse1))
     #              = max_lse + log(1 + exp(min_lse - max_lse))
-    lse = max_lse + safe_subtract(min_lse, max_lse).exp().log1p()
+    #              = max_lse + log1p(exp(min_lse - max_lse))
+    #              = max_lse + softplus(min_lse - max_lse)
+    lse = max_lse + F.softplus(safe_subtract(min_lse, max_lse))
     
     return lse.to(lse1.dtype)
 
