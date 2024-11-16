@@ -7,6 +7,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+# from assignment1 implementations
 from .norm import GroupRMSNorm
 
 
@@ -43,7 +44,7 @@ class OfflineSlidingWindowAttn(nn.Module):
         softmax_cap: Optional[float] = None,
         softmax_temp: float = 1.0,
         softmax_clip_range: Tuple[float, float] = (0., 1.),
-        group_size: int = 1,
+        group_size: Optional[int] = None,
         eps: float = 1e-5,
         init_range: tuple = (-1.0, 1.0),
         init_seed: int = 42,
@@ -66,12 +67,12 @@ class OfflineSlidingWindowAttn(nn.Module):
             softmax_cap(float, default = None): softmax capping to control the magnitude of the logits, if None, then NO capping is applied
             softmax_temp(float, default = 1.0): softmax temperature to control the sharpness of the distribution, only apply when softmax_cap is None
             softmax_clip_range(float, default = (0.0, 1.0): the range for softmax clipping to prevent the outliers from growing further
-            group_size(int): group size to split hidden size of query / key for GroupRMSNorm, to apply qk norm
-            eps(float, default = 1e-5): epsilon for GroupRMSNorm, to apply qk norm
-            init_range(tuple, default = (-1.0, 1.0)): the range of the initialization uniform distribution for GroupRMSNorm, to apply qk norm
-            init_seed(int, default = 42): initialization seed for GroupRMSNorm, to apply qk norm
-            dtype(torch.dtype, default = torch.float32): parameter dtype for GroupRMSNorm, to apply qk norm
-            device(str, default = "cpu"): parameter device for GroupRMSNorm, to apply qk norm
+            group_size(int, optional, default = None): group size to split hidden size of query / key for GroupRMSNorm, if None, then do NOT apply qk norm
+            eps(float, default = 1e-5): epsilon for GroupRMSNorm, if applying qk norm
+            init_range(tuple, default = (-1.0, 1.0)): the range of the initialization uniform distribution for GroupRMSNorm, if applying qk norm
+            init_seed(int, default = 42): initialization seed for GroupRMSNorm, if applying qk norm
+            dtype(torch.dtype, default = torch.float32): parameter dtype for GroupRMSNorm, if applying qk norm
+            device(str, default = "cpu"): parameter device for GroupRMSNorm, if applying qk norm
         """
         super().__init__()
         raise NotImplementedError("Assignment3 - Task1")
@@ -118,7 +119,7 @@ class OnlineSlidingWindowAttn(OfflineSlidingWindowAttn):
         softmax_scale: Optional[float] = None,
         softmax_cap: Optional[float] = None,
         softmax_temp: float = 1.0,
-        group_size: int = 1,
+        group_size: Optional[int] = None,
         eps: float = 1e-5,
         init_range: tuple = (-1.0, 1.0),
         init_seed: int = 42,
@@ -140,12 +141,12 @@ class OnlineSlidingWindowAttn(OfflineSlidingWindowAttn):
             softmax_scale(float, default = None): softmax scale factor, if None, then applying the standard value: 1/√d
             softmax_cap(float, default = None): softmax capping to control the magnitude of the logits, if None, then NO capping is applied
             softmax_temp(float, default = 1.0): softmax temperature to control the sharpness of the distribution, only apply when softmax_cap is None
-            group_size(int): group size to split hidden size of query / key for GroupRMSNorm, to apply qk norm
-            eps(float, default = 1e-5): epsilon for GroupRMSNorm, to apply qk norm
-            init_range(tuple, default = (-1.0, 1.0)): the range of the initialization uniform distribution for GroupRMSNorm, to apply qk norm
-            init_seed(int, default = 42): initialization seed for GroupRMSNorm, to apply qk norm
-            dtype(torch.dtype, default = torch.float32): parameter dtype for GroupRMSNorm, to apply qk norm
-            device(str, default = "cpu"): parameter device for GroupRMSNorm, to apply qk norm
+            group_size(int, optional, default = None): group size to split hidden size of query / key for GroupRMSNorm, if None, then do NOT apply qk norm
+            eps(float, default = 1e-5): epsilon for GroupRMSNorm, if applying qk norm
+            init_range(tuple, default = (-1.0, 1.0)): the range of the initialization uniform distribution for GroupRMSNorm, if applying qk norm
+            init_seed(int, default = 42): initialization seed for GroupRMSNorm, if applying qk norm
+            dtype(torch.dtype, default = torch.float32): parameter dtype for GroupRMSNorm, if applying qk norm
+            device(str, default = "cpu"): parameter device for GroupRMSNorm, if applying qk norm
         """
         super().__init__(
             head_dim=head_dim,

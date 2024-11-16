@@ -7,7 +7,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+# from assignment1 implementations
 from .norm import GroupRMSNorm
+
 from ..functional import (
     safe_softmax,
     correct_attn_lse, 
@@ -48,7 +50,7 @@ class OfflineSlidingWindowAttn(nn.Module):
         softmax_cap: Optional[float] = None,
         softmax_temp: float = 1.0,
         softmax_clip_range: Tuple[float, float] = (0., 1.),
-        group_size: int = 1,
+        group_size: Optional[int] = None,
         eps: float = 1e-5,
         init_range: tuple = (-1.0, 1.0),
         init_seed: int = 42,
@@ -71,12 +73,12 @@ class OfflineSlidingWindowAttn(nn.Module):
             softmax_cap(float, default = None): softmax capping to control the magnitude of the logits, if None, then NO capping is applied
             softmax_temp(float, default = 1.0): softmax temperature to control the sharpness of the distribution, only apply when softmax_cap is None
             softmax_clip_range(float, default = (0.0, 1.0): the range for softmax clipping to prevent the outliers from growing further
-            group_size(int): group size to split hidden size of query / key for GroupRMSNorm, to apply qk norm
-            eps(float, default = 1e-5): epsilon for GroupRMSNorm, to apply qk norm
-            init_range(tuple, default = (-1.0, 1.0)): the range of the initialization uniform distribution for GroupRMSNorm, to apply qk norm
-            init_seed(int, default = 42): initialization seed for GroupRMSNorm, to apply qk norm
-            dtype(torch.dtype, default = torch.float32): parameter dtype for GroupRMSNorm, to apply qk norm
-            device(str, default = "cpu"): parameter device for GroupRMSNorm, to apply qk norm
+            group_size(int, optional, default = None): group size to split hidden size of query / key for GroupRMSNorm, if None, then do NOT apply qk norm
+            eps(float, default = 1e-5): epsilon for GroupRMSNorm, if applying qk norm
+            init_range(tuple, default = (-1.0, 1.0)): the range of the initialization uniform distribution for GroupRMSNorm, if applying qk norm
+            init_seed(int, default = 42): initialization seed for GroupRMSNorm, if applying qk norm
+            dtype(torch.dtype, default = torch.float32): parameter dtype for GroupRMSNorm, if applying qk norm
+            device(str, default = "cpu"): parameter device for GroupRMSNorm, if applying qk norm
         """
         super().__init__()
         # raise NotImplementedError("Assignment3 - Task1")
@@ -106,6 +108,7 @@ class OfflineSlidingWindowAttn(nn.Module):
         self.softmax_clip_range = softmax_clip_range
         
         self.group_size = group_size
+        self.use_qk_norm = group_size is not None
         self.eps = eps
         self.init_range = init_range
         self.init_seed = init_seed
@@ -152,32 +155,35 @@ class OfflineSlidingWindowAttn(nn.Module):
         self.o_trans_func = lambda o: o.transpose(1, 2)
         
         # init q,k norm layers and qk norm function
-        self.q_norm_layer = GroupRMSNorm(
-            hidden_size=self.q_hidden_size,
-            group_size=self.group_size,
-            eps=self.eps,
-            init_range=self.init_range,
-            init_seed=self.init_seed,
-            dtype=self.dtype,
-            device=self.device,
-        )
-        self.k_norm_layer = GroupRMSNorm(
-            hidden_size=self.k_hidden_size,
-            group_size=self.group_size,
-            eps=self.eps,
-            init_range=self.init_range,
-            init_seed=self.init_seed,
-            dtype=self.dtype,
-            device=self.device,
-        )
-        self.qk_norm_func = lambda q, k: [ # assuming q,k already have shape: (b, s, h, d)
-            norm_layer(x.view(*x.shape[:2], -1)).view(*x.shape[:2], num_head, self.head_dim)
-            for x, norm_layer, num_head in zip(
-                (q, k), 
-                (self.q_norm_layer, self.k_norm_layer), 
-                (self.num_q_head, self.num_kv_head)
+        if self.use_qk_norm:
+            self.q_norm_layer = GroupRMSNorm(
+                hidden_size=self.q_hidden_size,
+                group_size=self.group_size,
+                eps=self.eps,
+                init_range=self.init_range,
+                init_seed=self.init_seed,
+                dtype=self.dtype,
+                device=self.device,
             )
-        ]
+            self.k_norm_layer = GroupRMSNorm(
+                hidden_size=self.k_hidden_size,
+                group_size=self.group_size,
+                eps=self.eps,
+                init_range=self.init_range,
+                init_seed=self.init_seed,
+                dtype=self.dtype,
+                device=self.device,
+            )
+            self.qk_norm_func = lambda q, k: [ # assuming q,k already have shape: (b, s, h, d)
+                norm_layer(x.view(*x.shape[:2], -1)).view(*x.shape[:2], num_head, self.head_dim)
+                for x, norm_layer, num_head in zip(
+                    (q, k), 
+                    (self.q_norm_layer, self.k_norm_layer), 
+                    (self.num_q_head, self.num_kv_head)
+                )
+            ]
+        else:
+            self.qk_norm_func = lambda q, k: (q, k)
         
         # init qkv split function
         if self.qkv_pack_format is AttnQKVPackFormat.QKV:
@@ -260,6 +266,14 @@ class OfflineSlidingWindowAttn(nn.Module):
         o = self.o_reshape_func(o)
         
         return o.to(dtype=q.dtype, device=q.device)
+    
+    def reset_parameters(self):
+        """Initialize the optional q, k norm parameters of Offline Sliding-Window Attention module"""
+        # raise NotImplementedError("Assignment3 - Task1")
+        
+        if self.use_qk_norm:
+            self.q_norm_layer.reset_parameters()
+            self.k_norm_layer.reset_parameters()
     
     def _attn_fwd_func(
         self, 
@@ -466,7 +480,7 @@ class OnlineSlidingWindowAttn(OfflineSlidingWindowAttn):
         softmax_scale: Optional[float] = None,
         softmax_cap: Optional[float] = None,
         softmax_temp: float = 1.0,
-        group_size: int = 1,
+        group_size: Optional[int] = None,
         eps: float = 1e-5,
         init_range: tuple = (-1.0, 1.0),
         init_seed: int = 42,
@@ -488,12 +502,12 @@ class OnlineSlidingWindowAttn(OfflineSlidingWindowAttn):
             softmax_scale(float, default = None): softmax scale factor, if None, then applying the standard value: 1/√d
             softmax_cap(float, default = None): softmax capping to control the magnitude of the logits, if None, then NO capping is applied
             softmax_temp(float, default = 1.0): softmax temperature to control the sharpness of the distribution, only apply when softmax_cap is None
-            group_size(int): group size to split hidden size of query / key for GroupRMSNorm, to apply qk norm
-            eps(float, default = 1e-5): epsilon for GroupRMSNorm, to apply qk norm
-            init_range(tuple, default = (-1.0, 1.0)): the range of the initialization uniform distribution for GroupRMSNorm, to apply qk norm
-            init_seed(int, default = 42): initialization seed for GroupRMSNorm, to apply qk norm
-            dtype(torch.dtype, default = torch.float32): parameter dtype for GroupRMSNorm, to apply qk norm
-            device(str, default = "cpu"): parameter device for GroupRMSNorm, to apply qk norm
+            group_size(int, optional, default = None): group size to split hidden size of query / key for GroupRMSNorm, if None, then do NOT apply qk norm
+            eps(float, default = 1e-5): epsilon for GroupRMSNorm, if applying qk norm
+            init_range(tuple, default = (-1.0, 1.0)): the range of the initialization uniform distribution for GroupRMSNorm, if applying qk norm
+            init_seed(int, default = 42): initialization seed for GroupRMSNorm, if applying qk norm
+            dtype(torch.dtype, default = torch.float32): parameter dtype for GroupRMSNorm, if applying qk norm
+            device(str, default = "cpu"): parameter device for GroupRMSNorm, if applying qk norm
         """
         super().__init__(
             head_dim=head_dim,
@@ -595,7 +609,7 @@ class OnlineSlidingWindowAttn(OfflineSlidingWindowAttn):
             local_o=self.local_o[:, :(self.block_end_q - self.block_start_q), ...], # [b, bq', hq, hd]
             local_lse=self.local_lse[..., :(self.block_end_q - self.block_start_q)], # [b, hq, bq']
         )
-        
+    
     def _non_varlen_attn_fwd_func(
         self,
         q: torch.Tensor, 
