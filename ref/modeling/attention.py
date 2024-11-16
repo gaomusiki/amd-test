@@ -83,7 +83,7 @@ class OfflineSlidingWindowAttn(nn.Module):
         super().__init__()
         # raise NotImplementedError("Assignment3 - Task1")
         
-        assert head_dim % group_size == 0, f"The head dimension ({head_dim}) must be divisible by the group size ({group_size})"
+        assert group_size is None or head_dim % group_size == 0, f"The head dimension ({head_dim}) must be divisible by the group size ({group_size})"
         assert num_q_head % num_kv_head == 0, f"The number of query heads ({num_q_head}) must be divisible by the number of key/value heads ({num_kv_head})"
         assert softmax_temp > 0., "The softmax temperature must be greater than 0"
         assert softmax_cap is None or softmax_cap > 0., "The softmax capping must be greater than 0 if given"
