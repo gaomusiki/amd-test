@@ -11,7 +11,8 @@ class GroupRMSNorm(nn.Module):
             learnable scaling transformation on each i-th group individually.
     """
     
-    def __init__(self, 
+    def __init__(
+        self, 
         hidden_size: int, 
         group_size: int,
         eps: float = 1e-5,
@@ -43,16 +44,17 @@ class GroupRMSNorm(nn.Module):
         self.init_range = init_range
         self.init_seed = init_seed
         
-        self.weight = nn.Parameter( # shape: (ng, gz)
+        self.weight = nn.Parameter( # shape: (1, 1, ng, gz) for broadcasting
             torch.empty(
-                (self.num_groups, self.group_size,),
+                (1, 1, self.num_groups, self.group_size),
                 dtype=dtype,
                 device=device
             )
-        )[None, None, ...] # expand dims to (1, 1, ng, gz) for broadcasting
+        )
+        
         self.reset_parameters()
         
-    def forward(self, input : torch.Tensor) -> torch.Tensor:
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward pass for Group RMS Norm module
 
         Args:
