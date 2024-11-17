@@ -1,3 +1,5 @@
+from typing import Optional
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -14,7 +16,7 @@ class GroupRMSNorm(nn.Module):
     def __init__(
         self, 
         hidden_size: int, 
-        group_size: int,
+        group_size: Optional[int] = None,
         eps: float = 1e-5,
         init_range: tuple = (-1.0, 1.0),
         init_seed: int = 42,
@@ -25,7 +27,7 @@ class GroupRMSNorm(nn.Module):
         
         Args:
             hidden_size(int): hidden dimension size
-            group_size(int): group size
+            group_size(int, optional): group size, if None, then set it to hidden_size to fall back to RMSNorm
             eps(float, default = 1e-5): epsilon
             init_range(tuple, default = (-1.0, 1.0)): the range of the uniform distribution to initialize learnable scaling parameters
             init_seed(int, default = 42): seed for the initialization
@@ -35,14 +37,15 @@ class GroupRMSNorm(nn.Module):
         super().__init__()
         # raise NotImplementedError("TODO: Assignment1 - Task1")
         
-        assert hidden_size % group_size == 0, "hidden_size must be divisible by group_size"
+        assert group_size is None or hidden_size % group_size == 0, "hidden_size must be divisible by group_size"
         
         self.hidden_size = hidden_size # h
-        self.group_size = group_size # gz
-        self.num_groups = hidden_size // group_size # ng = h // gz
+        self.group_size = group_size if group_size is not None else hidden_size # gz
         self.eps = eps
         self.init_range = init_range
         self.init_seed = init_seed
+        
+        self.num_groups = self.hidden_size // self.group_size # ng = h // gz
         
         self.weight = nn.Parameter( # shape: (1, 1, ng, gz) for broadcasting
             torch.empty(

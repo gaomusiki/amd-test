@@ -50,6 +50,7 @@ class OfflineSlidingWindowAttn(nn.Module):
         softmax_cap: Optional[float] = None,
         softmax_temp: float = 1.0,
         softmax_clip_range: Tuple[float, float] = (0., 1.),
+        apply_qk_norm: bool = False,
         group_size: Optional[int] = None,
         eps: float = 1e-5,
         init_range: tuple = (-1.0, 1.0),
@@ -73,7 +74,8 @@ class OfflineSlidingWindowAttn(nn.Module):
             softmax_cap(float, default = None): softmax capping to control the magnitude of the logits, if None, then NO capping is applied
             softmax_temp(float, default = 1.0): softmax temperature to control the sharpness of the distribution, only apply when softmax_cap is None
             softmax_clip_range(float, default = (0.0, 1.0): the range for softmax clipping to prevent the outliers from growing further
-            group_size(int, optional, default = None): group size to split hidden size of query / key for GroupRMSNorm, if None, then do NOT apply qk norm
+            apply_qk_norm(bool, default = False): if True, then apply qk norm
+            group_size(int, optional, default = None): group size to split hidden size of query / key for GroupRMSNorm, if None, then set it to `head_dim`, if applying qk norm
             eps(float, default = 1e-5): epsilon for GroupRMSNorm, if applying qk norm
             init_range(tuple, default = (-1.0, 1.0)): the range of the initialization uniform distribution for GroupRMSNorm, if applying qk norm
             init_seed(int, default = 42): initialization seed for GroupRMSNorm, if applying qk norm
@@ -107,8 +109,8 @@ class OfflineSlidingWindowAttn(nn.Module):
         self.softmax_temp = softmax_temp
         self.softmax_clip_range = softmax_clip_range
         
-        self.group_size = group_size
-        self.use_qk_norm = group_size is not None
+        self.apply_qk_norm = apply_qk_norm
+        self.group_size = group_size if group_size is not None else head_dim
         self.eps = eps
         self.init_range = init_range
         self.init_seed = init_seed
@@ -155,7 +157,7 @@ class OfflineSlidingWindowAttn(nn.Module):
         self.o_trans_func = lambda o: o.transpose(1, 2)
         
         # init q,k norm layers and qk norm function
-        if self.use_qk_norm:
+        if self.apply_qk_norm:
             self.q_norm_layer = GroupRMSNorm(
                 hidden_size=self.q_hidden_size,
                 group_size=self.group_size,
@@ -271,7 +273,7 @@ class OfflineSlidingWindowAttn(nn.Module):
         """Initialize the optional q, k norm parameters of Offline Sliding-Window Attention module"""
         # raise NotImplementedError("Assignment3 - Task1")
         
-        if self.use_qk_norm:
+        if self.apply_qk_norm:
             self.q_norm_layer.reset_parameters()
             self.k_norm_layer.reset_parameters()
     
@@ -480,6 +482,7 @@ class OnlineSlidingWindowAttn(OfflineSlidingWindowAttn):
         softmax_scale: Optional[float] = None,
         softmax_cap: Optional[float] = None,
         softmax_temp: float = 1.0,
+        apply_qk_norm: bool = False,
         group_size: Optional[int] = None,
         eps: float = 1e-5,
         init_range: tuple = (-1.0, 1.0),
@@ -502,7 +505,8 @@ class OnlineSlidingWindowAttn(OfflineSlidingWindowAttn):
             softmax_scale(float, default = None): softmax scale factor, if None, then applying the standard value: 1/√d
             softmax_cap(float, default = None): softmax capping to control the magnitude of the logits, if None, then NO capping is applied
             softmax_temp(float, default = 1.0): softmax temperature to control the sharpness of the distribution, only apply when softmax_cap is None
-            group_size(int, optional, default = None): group size to split hidden size of query / key for GroupRMSNorm, if None, then do NOT apply qk norm
+            apply_qk_norm(bool, default = False): if True, then apply qk norm
+            group_size(int, optional, default = None): group size to split hidden size of query / key for GroupRMSNorm, if None, then set it to `head_dim`, if applying qk norm
             eps(float, default = 1e-5): epsilon for GroupRMSNorm, if applying qk norm
             init_range(tuple, default = (-1.0, 1.0)): the range of the initialization uniform distribution for GroupRMSNorm, if applying qk norm
             init_seed(int, default = 42): initialization seed for GroupRMSNorm, if applying qk norm
@@ -518,6 +522,7 @@ class OnlineSlidingWindowAttn(OfflineSlidingWindowAttn):
             softmax_scale=softmax_scale,
             softmax_cap=softmax_cap,
             softmax_temp=softmax_temp,
+            apply_qk_norm=apply_qk_norm,
             group_size=group_size,
             eps=eps,
             init_range=init_range,
