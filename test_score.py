@@ -18,12 +18,6 @@ from test_utils import (
     check_if_param_reset_is_fine,
 )
 
-# global test settings for all assignments
-TOTAL_SCORE = 100
-SCORE_FEEDBACK_FILENAME = "score.md"
-ERROR_MSG_PREFIX_TO_CUTOFF = "E   "
-MAX_ERROR_MSG_LENGTH = 200
-
 # get student repo path from env
 student_repo_path = os.getenv("STUDENT_REPO_PATH", None)
 if student_repo_path is None:
