@@ -11,7 +11,7 @@ from torch.testing import assert_close
 TOTAL_SCORE = 100
 SCORE_FEEDBACK_FILENAME = "score.md"
 ERROR_MSG_PREFIX_TO_CUTOFF = "E   "
-MAX_ERROR_MSG_LENGTH = 200
+MAX_ERROR_MSG_LENGTH = 300
 
 
 class ResultCapture:
