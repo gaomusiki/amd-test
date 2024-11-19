@@ -61,7 +61,7 @@ attn_qkv_pack_format_ref_to_student = {
     AttnQKVPackFormatRef.Q_K_V: AttnQKVPackFormat.Q_K_V,
 }
 
-# configs for each toy test case
+# configs for each score test case
 score_test_cases = {
     "task1": {
         "case1": {
