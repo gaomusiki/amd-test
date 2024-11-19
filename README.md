@@ -106,7 +106,7 @@ Please read the description [here](./tasks/task2.md).
     | Task2 - Case4 | 10 | ✅ | |
     | Task2 - Case5 | 10 | ✅ | |
     | Task2 - Case6 | 10 | ✅ | |
-    | Total         | 😊 | ✅ | |
+    | Total         | 100| 😊 | |
 
 * The meaning of the status icons are listed below:
     * ✅: passed the case
