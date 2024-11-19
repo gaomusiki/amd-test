@@ -41,7 +41,7 @@ from src.modeling import (
     OnlineSlidingWindowAttn,
 )
 
-# constants for all toy test cases
+# constants for all score test cases
 ATOL = 1e-5
 RTOL = 1e-5
 SEED = 142
