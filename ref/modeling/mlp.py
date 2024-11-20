@@ -371,7 +371,7 @@ class SparseMLPWithLoRA(nn.Module):
             expert_output = expert_route_weights * local_expert(expert_input)
             
             # scatter the local expert output to the global output buffer, with shape: (gs, h) -> (b*s, h)
-            output.scatter_add_(dim=0, index=expert_route_idxs_h, src=expert_output)
+            output.scatter_add_(dim=0, index=expert_route_idxs_h, src=expert_output.to(output.dtype))
         
         return output.to(dtype=input_dtype, device=input_device).view(b, s, h)
         
