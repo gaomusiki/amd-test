@@ -4,7 +4,6 @@ import numpy as np
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from ..functional import apply_rotary_pos_emb
 
@@ -14,7 +13,8 @@ class NTKAwareRoPE(nn.Module):
     This is a series variants of the RoPE modules based on NTK theory to enhance its extrapolation ability.
     """
     
-    def __init__(self, 
+    def __init__(
+        self, 
         dim: int, 
         max_seq_len: int,
         base: int = 10000,
@@ -71,11 +71,12 @@ class NTKAwareRoPE(nn.Module):
         
         self.extended_seq_len = self.max_seq_len * self.ratio
         
-    def forward(self, input: torch.Tensor) -> torch.Tensor:
+    def forward(self, input: torch.Tensor, offset: int = 0) -> torch.Tensor:
         """The forward pass of the NTK-aware RoPE module
         
         Args:
             input(torch.Tensor): input tensor, with shape: [batch_size, seq_len, num_heads, head_dim]
+            offset(int, optional): The offset of the starting position index of the input tensor. Defaults to 0.
         
         Returns:
             output(torch.Tensor): embedded output tensor, with shape: [batch_size, seq_len, num_heads, head_dim]
@@ -83,7 +84,7 @@ class NTKAwareRoPE(nn.Module):
         # raise NotImplementedError("TODO: Assignment1 - Task3")
         
         # get the cached cos, sin
-        cos, sin = self._get_cos_sin_cached(x=input)
+        cos, sin = self._get_cos_sin_cached(x=input, offset=offset)
         
         # apply rotary pos emb
         output = apply_rotary_pos_emb(
@@ -97,24 +98,27 @@ class NTKAwareRoPE(nn.Module):
     def _get_cos_sin_cached(
         self,
         x: torch.Tensor,
+        offset: int = 0,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         seq_len = x.shape[1] # shape: (b, s, nh, hd)
+        start_idx, end_idx = offset, offset + seq_len
 
-        if seq_len > self.extended_seq_len:
+        if end_idx > self.extended_seq_len:
             # give the too long seq a temperary embedding
             # and if in dynamic mode, register the new embedding cache and ntk ratio
-            return self._get_new_cos_sin_cached(x, seq_len)
+            cos_cached, sin_cached = self._get_new_cos_sin_cached(end_idx)
+        else:
+            cos_cached, sin_cached = self.cos_cached, self.sin_cached
     
         return (
-            self.cos_cached[:seq_len, ...],
-            self.sin_cached[:seq_len, ...],
+            cos_cached[start_idx:end_idx, ...],
+            sin_cached[start_idx:end_idx, ...],
         )
         
     def _get_new_cos_sin_cached(
         self,
-        x: torch.Tensor,
         new_seq_len: int,
-    ):
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Deal with the input of too long seq_len.
         """
@@ -149,10 +153,7 @@ class NTKAwareRoPE(nn.Module):
             # re-register new cos/sin cache
             self._register_cos_sin_cache(cos_cached=new_cos_cached, sin_cached=new_sin_cached)
         
-        return (
-            new_cos_cached[:new_seq_len, ...],
-            new_sin_cached[:new_seq_len, ...],
-        )
+        return new_cos_cached, new_sin_cached
     
     def _recompute_ratio(self, new_seq_len: int) -> int:
         new_ratio = int(np.ceil(new_seq_len / self.max_seq_len))
@@ -169,8 +170,8 @@ class NTKAwareRoPE(nn.Module):
         dtype: torch.dtype = torch.float32,
         device: str = 'cpu', 
     ) -> torch.Tensor:
-        base *= k ** (dim / (dim-2)) # base change formula
-        inv_freq = 1.0 / (base ** (torch.arange(0, dim, 2).to(device=device, dtype=dtype) / dim))
+        new_base = float(base) * k ** (dim / (dim-2)) # base change formula, here type cast to avoid cython type error
+        inv_freq = 1.0 / (new_base ** (torch.arange(0, dim, 2).to(device=device, dtype=dtype) / dim))
         
         return inv_freq
     
