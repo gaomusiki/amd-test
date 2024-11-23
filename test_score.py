@@ -540,7 +540,7 @@ def safe_clone(x: Optional[torch.Tensor]) -> Optional[torch.Tensor]:
         return x.clone()
 
 
-@pytest.timeout(TIMEOUT)
+@pytest.mark.timeout(TIMEOUT)
 @pytest.mark.parametrize(
     "case_key, case_config",
     score_test_cases["task1"].items(),
@@ -637,7 +637,7 @@ def test_task1(case_key, case_config):
     check_if_io_meta_is_match(output, q)
     
 
-@pytest.timeout(TIMEOUT)
+@pytest.mark.timeout(TIMEOUT)
 @pytest.mark.parametrize(
     "case_key, case_config",
     score_test_cases["task2"].items(),
