@@ -251,7 +251,7 @@ class SparseMLPWithLoRA(nn.Module):
         super().__init__()
         # raise NotImplementedError("Assignment2 - Task2")
         
-        assert hidden_size % num_experts == 0, "hidden_size must be divisible by num_experts"
+        assert ffh_size % num_experts == 0, "ffh_size must be divisible by num_experts"
         
         self.hidden_size = hidden_size
         self.ffh_size = ffh_size
@@ -272,7 +272,7 @@ class SparseMLPWithLoRA(nn.Module):
         self.dtype = dtype
         self.device = device
         
-        self.expert_size = self.hidden_size // self.num_global_experts
+        self.expert_size = self.ffh_size // self.num_global_experts
         self.num_local_experts = self.num_global_experts // self.world_size
         self.start_expert_idx, self.end_expert_idx = self.rank * self.num_local_experts, (self.rank + 1) * self.num_local_experts
         
@@ -291,7 +291,7 @@ class SparseMLPWithLoRA(nn.Module):
                 dtype=self.dtype,
                 device=self.device,
             )
-            for expert_idx in range(self.num_local_experts)
+            for expert_idx in range(self.start_expert_idx, self.end_expert_idx)
         ])
         
         # init global gating weights
