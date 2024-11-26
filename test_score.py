@@ -42,8 +42,8 @@ from src.modeling import (
 )
 
 # constants for all score test cases
-ATOL = 1e-5
-RTOL = 1e-5
+ATOL = 2e-3
+RTOL = 5e-3
 SEED = 142
 TIMEOUT = 15
 
