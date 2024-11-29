@@ -77,7 +77,7 @@ class OfflineSlidingWindowAttn(nn.Module):
             device(str, default = "cpu"): parameter device for GroupRMSNorm, if applying qk norm
         """
         super().__init__()
-        raise NotImplementedError("Assignment3 - Task1")
+        raise NotImplementedError("TODO: Assignment3 - Task1")
     
     def forward(
         self,
@@ -98,9 +98,13 @@ class OfflineSlidingWindowAttn(nn.Module):
         Returns:
             torch.Tensor: output tensor o, with the same shape as q
         """
-        raise NotImplementedError("Assignment3 - Task1")
-
+        raise NotImplementedError("TODO: Assignment3 - Task1")
     
+    def reset_parameters(self):
+        """Initialize the optional q, k norm parameters of Offline Sliding-Window Attention module"""
+        raise NotImplementedError("TODO: Assignment3 - Task1")
+    
+
 class OnlineSlidingWindowAttn(OfflineSlidingWindowAttn):
     """Online Sliding-Window Attention module
     This is a online version of Offline Sliding-Window Attention module \
@@ -169,7 +173,7 @@ class OnlineSlidingWindowAttn(OfflineSlidingWindowAttn):
             dtype=dtype,
             device=device,
         )
-        raise NotImplementedError("Assignment3 - Task2")
+        raise NotImplementedError("TODO: Assignment3 - Task2")
     
     def forward(
         self,
@@ -192,4 +196,5 @@ class OnlineSlidingWindowAttn(OfflineSlidingWindowAttn):
             block_idx_q(int): the block index of q
             block_idx_kv(int): the block index of kv
         """
-        raise NotImplementedError("Assignment3 - Task2")
+        raise NotImplementedError("TODO: Assignment3 - Task2")
+    

@@ -48,7 +48,7 @@ class DenseMLPWithLoRA(nn.Module):
             device(str, default = "cpu"): parameter device
         """
         super().__init__()
-        raise NotImplementedError("Assignment2 - Task1")
+        raise NotImplementedError("TODO: Assignment2 - Task1")
     
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward pass of the Dense MLP module with LoRA adapters
@@ -59,13 +59,13 @@ class DenseMLPWithLoRA(nn.Module):
         Returns:
             output(torch.Tensor): output tensor, with shape: [batch_size, seq_len, hidden_size]
         """
-        raise NotImplementedError("Assignment2 - Task1")
+        raise NotImplementedError("TODO: Assignment2 - Task1")
     
     def reset_parameters(self):
         """Initialize the weights of the Dense MLP module with LoRA adapters
         from a normal distribution (or a uniform distribution for lora weights)
         """
-        raise NotImplementedError("Assignment2 - Task1")
+        raise NotImplementedError("TODO: Assignment2 - Task1")
 
     
 class SparseMLPWithLoRA(nn.Module):
@@ -118,7 +118,7 @@ class SparseMLPWithLoRA(nn.Module):
             device(str, default = "cpu"): parameter device
         """
         super().__init__()
-        raise NotImplementedError("Assignment2 - Task2")
+        raise NotImplementedError("TODO: Assignment2 - Task2")
         
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward pass of the Sparse MLP module with LoRA adapters
@@ -129,10 +129,10 @@ class SparseMLPWithLoRA(nn.Module):
         Returns:
             output(torch.Tensor): output tensor, with shape: [batch_size, seq_len, hidden_size]
         """
-        raise NotImplementedError("Assignment2 - Task2")
+        raise NotImplementedError("TODO: Assignment2 - Task2")
         
     def reset_parameters(self):
         """Initialize the weights of each local expert from its own distribution \
             and the gating layer from a normal distribution
         """
-        raise NotImplementedError("Assignment2 - Task2")
+        raise NotImplementedError("TODO: Assignment2 - Task2")
