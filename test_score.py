@@ -1,12 +1,9 @@
 import sys
 import os
-os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
-os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
-
 from typing import List, Optional, Sequence
 
 import pytest
-
+import json
 import torch
 import torch.nn.functional as F
 from torch.testing import assert_close
@@ -61,6 +58,34 @@ attn_qkv_pack_format_ref_to_student = {
     AttnQKVPackFormatRef.Q_K_V: AttnQKVPackFormat.Q_K_V,
 }
 
+def save_tensor_output(tensor, filename: str):
+    os.makedirs(os.path.dirname(filename), exist_ok=True)
+    tensor = tensor.cpu() 
+    torch.save(tensor, filename)
+
+def save_tensor_json_full(ref_tensor, student_tensor, filename: str, full_tensor: bool = False):
+    os.makedirs(os.path.dirname(filename), exist_ok=True)
+
+    def tensor_to_json(t: Optional[torch.Tensor]):
+        if t is None:
+            return None
+        return {
+            "shape": list(t.shape),
+            "dtype": str(t.dtype),
+            "device": str(t.device),
+            "values": t.cpu().tolist() if full_tensor else None
+        }
+
+    result = {
+        "ref": tensor_to_json(ref_tensor),
+        "student": tensor_to_json(student_tensor)
+    }
+
+    with open(filename, "w") as f:
+        json.dump(result, f, indent=2)
+
+
+
 # configs for each score test case
 score_test_cases = {
     "task1": {
@@ -97,10 +122,10 @@ score_test_cases = {
             "init_seed": SEED + 1,
             
             "activation_dtype": torch.bfloat16,
-            "activation_device": "cuda",
+            "activation_device": "cpu",
             
             "param_dtype": torch.float32,
-            "param_device": "cuda",
+            "param_device": "cpu",
         },
         "case2": {
             "score": 10,
@@ -135,10 +160,10 @@ score_test_cases = {
             "init_seed": SEED + 2,
             
             "activation_dtype": torch.bfloat16,
-            "activation_device": "cuda",
+            "activation_device": "cpu",
             
             "param_dtype": torch.float32,
-            "param_device": "cuda",
+            "param_device": "cpu",
         },
         "case3": {
             "score": 10,
@@ -173,10 +198,10 @@ score_test_cases = {
             "init_seed": SEED + 3,
             
             "activation_dtype": torch.bfloat16,
-            "activation_device": "cuda",
+            "activation_device": "cpu",
             
             "param_dtype": torch.float32,
-            "param_device": "cuda",
+            "param_device": "cpu",
         },
         "case4": {
             "score": 10,
@@ -211,10 +236,10 @@ score_test_cases = {
             "init_seed": SEED + 4,
             
             "activation_dtype": torch.bfloat16,
-            "activation_device": "cuda",
+            "activation_device": "cpu",
             
             "param_dtype": torch.float32,
-            "param_device": "cuda",
+            "param_device": "cpu",
         },
         "case5": {
             "score": 10,
@@ -249,10 +274,10 @@ score_test_cases = {
             "init_seed": SEED + 5,
             
             "activation_dtype": torch.bfloat16,
-            "activation_device": "cuda",
+            "activation_device": "cpu",
             
             "param_dtype": torch.float32,
-            "param_device": "cuda",
+            "param_device": "cpu",
         },
         "case6": {
             "score": 10,
@@ -287,10 +312,10 @@ score_test_cases = {
             "init_seed": SEED + 6,
             
             "activation_dtype": torch.bfloat16,
-            "activation_device": "cuda",
+            "activation_device": "cpu",
             
             "param_dtype": torch.float32,
-            "param_device": "cuda",
+            "param_device": "cpu",
         }
     },
     "task2": {
@@ -323,10 +348,10 @@ score_test_cases = {
             "init_seed": SEED + 1,
             
             "activation_dtype": torch.float32,
-            "activation_device": "cuda",
+            "activation_device": "cpu",
             
             "param_dtype": torch.float32,
-            "param_device": "cuda",
+            "param_device": "cpu",
         },
         "case2": {
             "score": 10,
@@ -357,10 +382,10 @@ score_test_cases = {
             "init_seed": SEED + 2,
             
             "activation_dtype": torch.float32,
-            "activation_device": "cuda",
+            "activation_device": "cpu",
             
             "param_dtype": torch.float32,
-            "param_device": "cuda",
+            "param_device": "cpu",
         },
         "case3": {
             "score": 10,
@@ -391,10 +416,10 @@ score_test_cases = {
             "init_seed": SEED + 3,
             
             "activation_dtype": torch.float32,
-            "activation_device": "cuda",
+            "activation_device": "cpu",
             
             "param_dtype": torch.float32,
-            "param_device": "cuda",
+            "param_device": "cpu",
         },
         "case4": {
             "score": 10,
@@ -425,10 +450,10 @@ score_test_cases = {
             "init_seed": SEED + 4,
             
             "activation_dtype": torch.float32,
-            "activation_device": "cuda",
+            "activation_device": "cpu",
             
             "param_dtype": torch.float32,
-            "param_device": "cuda",
+            "param_device": "cpu",
         }
     },
 }
@@ -446,7 +471,7 @@ def construct_offline_attn_args(
     seqlens_q: Optional[List[int]] = None,
     seqlens_kv: Optional[List[int]] = None,
     dtype: torch.dtype = torch.bfloat16,
-    device: str = "cuda",
+    device: str = "cpu",
     seed: int = SEED,
 ) -> Sequence[Optional[torch.Tensor]]:
     torch.manual_seed(seed)
@@ -507,7 +532,7 @@ def construct_online_attn_args(
     bqi: int,
     bkvj: int,
     dtype: torch.dtype = torch.bfloat16,
-    device: str = "cuda",
+    device: str = "cpu",
     seed: int = SEED,
 ) -> Sequence[torch.Tensor]:
     nbq = (sq + bq - 1) // bq
@@ -630,7 +655,9 @@ def test_task1(case_key, case_config):
         cu_seqlens_q=cu_seqlens_q,
         cu_seqlens_k=cu_seqlens_kv,
     )
-    
+    save_tensor_output(output_ref, f"outputs/task1_{case_key}_ref.pt")
+    save_tensor_output(output, f"outputs/task1_{case_key}_student.pt")
+    save_tensor_json_full(output_ref, output, f"outputs/task1_{case_key}.json", full_tensor=True)
     # check if the output tensor is correct
     assert_close(output, output_ref, atol=atol, rtol=rtol)
     # check if the meta attribute of outout tensor is correct
@@ -729,7 +756,12 @@ def test_task2(case_key, case_config):
         block_idx_q=bqi, 
         block_idx_kv=bkvj,
     )
-    
+    save_tensor_output(global_o_ref, f"outputs/task2_{case_key}_ref_global_o.pt")
+    save_tensor_output(global_lse_ref, f"outputs/task2_{case_key}_ref_global_lse.pt")
+    save_tensor_output(global_o, f"outputs/task2_{case_key}_student_global_o.pt")
+    save_tensor_output(global_lse, f"outputs/task2_{case_key}_student_global_lse.pt")
+    save_tensor_json_full(global_o_ref, global_o, f"outputs/task2_{case_key}_global_o.json", full_tensor=True)
+    save_tensor_json_full(global_lse_ref, global_lse, f"outputs/task2_{case_key}_global_lse.json", full_tensor=True)
     # check if the output tensors are correct
     assert_close(global_o, global_o_ref, atol=atol, rtol=rtol)
     assert_close(global_lse, global_lse_ref, atol=atol, rtol=rtol)

@@ -7,7 +7,7 @@ touch $control_file
 
 script="test_script.sh"
 
-interval=7200 # 2 hours
+interval=3600 # 2 hours
 # interval=3600 # 1 hour
 # interval=1800 # 30 min
 # interval=600 # 10 min

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-export CUDA_VISIBLE_DEVICES="0"
+export CUDA_VISIBLE_DEVICES="cpu"
 
 SEP="========================================================================"
 SUBMITS_ROOT="submits"
@@ -9,12 +9,12 @@ SCORE_FEEBACK_BRANCH_NAME="score-feedback"
 CLASSROOM="nju-llm-course-classroom"
 ASSIGNMENT="assignment-3-modeling-attn"
 
-STUDENT_REPO_ROOT="$SUBMITS_ROOT/$ASSIGNMENT-submissions"
+STUDENT_REPO_ROOT="$SUBMITS_ROOT"
 mkdir -p "${STUDENT_REPO_ROOT}"
 
-CLONE_REPOS=true
+CLONE_REPOS=false
 DO_TEST=true
-PUSH_FEEBACK=true
+PUSH_FEEBACK=false
 
 
 allowed_students=""
